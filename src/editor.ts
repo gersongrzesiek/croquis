@@ -2,7 +2,7 @@ import { CATALOGO, CATEGORIAS, dibujarSimbolo, itemPorClave, itemsDeCategoria } 
 import { cajaDe, cajaDeTodos, mover, posEtiqueta, puntoLocal, puntosClave, toca } from './elementos';
 import { inyectarEstilos } from './estilos';
 import { exportarPNG, type ImagenCroquis } from './exportar';
-import { aMundo, areaPoligono, dist, formatoM, insetPoligono, proyectar } from './geometria';
+import { aMundo, areaPoligono, dist, distBorde, enPoligono, formatoM, insetPoligono, lado, proyectar, recortarPoligono } from './geometria';
 import { ICONOS } from './iconos';
 import {
   datosVacios,
@@ -915,6 +915,7 @@ export class Editor {
 
   /** Crea los muros de un cuarto con su piso ligado y deja lista la etiqueta para escribirla. */
   private crearCuarto(pts: Pt[]) {
+    pts = this.ajustarACortes(pts);
     const muros = pts.map((q, i) => this.nuevoMuro(q, pts[(i + 1) % pts.length]));
     const piso: Area = {
       ...this.nuevaArea(pts),
@@ -992,7 +993,25 @@ export class Editor {
     return r;
   }
 
-  /** Esquina (unión de exactamente dos muros) más cercana al punto. */
+  /**
+   * Muros que llegan a q agrupados por dirección. Es una esquina si hay exactamente dos direcciones,
+   * aunque varios muros compartan cada una (por ejemplo, un cuarto metido en la esquina de otro).
+   */
+  private gruposEsquina(q: Pt) {
+    const grupos: { dir: Pt; ms: { el: Muro; extremo: 'a' | 'b' }[] }[] = [];
+    for (const m of this.murosEn(q)) {
+      const otro = m.extremo === 'a' ? m.el.b : m.el.a;
+      const l = dist(q, otro);
+      if (l < 1e-6) continue;
+      const d = { x: (otro.x - q.x) / l, y: (otro.y - q.y) / l };
+      const g = grupos.find((g) => g.dir.x * d.x + g.dir.y * d.y > 0.999);
+      if (g) g.ms.push(m);
+      else grupos.push({ dir: d, ms: [m] });
+    }
+    return grupos.length === 2 ? grupos : null;
+  }
+
+  /** Esquina más cercana al punto. */
   private esquinaCerca(p: Pt): Pt | null {
     let mejor: Pt | null = null;
     let md = this.tol(14);
@@ -1000,7 +1019,7 @@ export class Editor {
       if (o.tipo !== 'muro') continue;
       for (const q of [o.a, o.b]) {
         const d = dist(p, q);
-        if (d < md && this.murosEn(q).length === 2) {
+        if (d < md && this.gruposEsquina(q)) {
           md = d;
           mejor = q;
         }
@@ -1012,7 +1031,21 @@ export class Editor {
   private cortarEsquina(p: Pt) {
     const q = this.esquinaCerca(p);
     if (!q) return this.aviso('Haz clic en una esquina donde se unen dos muros.');
-    const [u, v] = this.murosEn(q);
+    const [gu, gv] = this.gruposEsquina(q)!;
+    // Se corta el cuarto más grande que tenga esta esquina; los cuartos de adentro se ajustan al corte después.
+    const cuartos = this.datos.elementos.filter((e): e is Area => e.tipo === 'area' && !!e.muros?.length);
+    let u = gu.ms[0];
+    let v = gv.ms[0];
+    let principal: Area | null = null;
+    let mayor = -1;
+    for (const c of cuartos) {
+      for (const x of gu.ms)
+        for (const y of gv.ms) {
+          if (!c.muros!.includes(x.el.id) || !c.muros!.includes(y.el.id)) continue;
+          const a = areaPoligono(this.esquinasCuarto(c));
+          if (a > mayor) [mayor, u, v, principal] = [a, x, y, c];
+        }
+    }
     const largo = (m: { el: Muro; extremo: 'a' | 'b' }) => dist(m.el.a, m.el.b);
     const d = Math.min(this.estilo.chaflan, largo(u) * 0.9, largo(v) * 0.9);
     const recorte = (m: { el: Muro; extremo: 'a' | 'b' }): Pt => {
@@ -1040,12 +1073,51 @@ export class Editor {
     };
     this.datos.elementos.push(nuevo);
     this.insertarEnCuartos(antes.el.id, despues.el.id, [nuevo.id]);
+    // Los demás cuartos que ocupan esa esquina se recortan con la misma diagonal
+    for (const c of cuartos) {
+      if (c === principal) continue;
+      const pts = this.esquinasCuarto(c);
+      if (pts.length < 3 || !(enPoligono(q, pts) || distBorde(q, pts) < 1e-3)) continue;
+      this.rehacerCuarto(c, recortarPoligono(pts, pA, pD, q));
+    }
     this.notificar();
     // Deja seleccionado el corte para ajustarlo arrastrando sus extremos o desde el panel
     this.cambiarHerramienta('seleccionar');
     this.seleccion = new Set([nuevo.id]);
     this.actualizarPanel();
     this.dibujar();
+  }
+
+  /** Recorta un cuarto nuevo con los cortes de esquina que lo atraviesan, para que siga la diagonal. */
+  private ajustarACortes(pts: Pt[]): Pt[] {
+    for (const c of this.datos.elementos) {
+      if (c.tipo !== 'muro' || !c.chaflan) continue;
+      const q = c.chaflan.q;
+      if (!(enPoligono(q, pts) || distBorde(q, pts) < 0.05)) continue;
+      const sq = lado(q, c.a, c.b);
+      const lados = pts.map((p) => lado(p, c.a, c.b) * sq);
+      if (!lados.some((s) => s > 1e-9) || !lados.some((s) => s < -1e-9)) continue;
+      const r = recortarPoligono(pts, c.a, c.b, q);
+      if (r.length >= 3) pts = r;
+    }
+    return pts;
+  }
+
+  /** Cambia la forma de un cuarto: reemplaza sus muros por unos nuevos que siguen el polígono. */
+  private rehacerCuarto(c: Area, pts: Pt[]) {
+    if (pts.length < 3) return;
+    const viejos = new Set(c.muros);
+    const muestra = this.datos.elementos.find((e): e is Muro => e.tipo === 'muro' && viejos.has(e.id));
+    const nuevos = pts.map((p, i) => ({
+      ...this.nuevoMuro(p, pts[(i + 1) % pts.length]),
+      grosor: muestra?.grosor ?? this.estilo.grosorMuro,
+      color: muestra?.color ?? this.estilo.muro,
+    }));
+    const els = this.datos.elementos;
+    const i = els.findIndex((e) => viejos.has(e.id));
+    this.datos.elementos = els.filter((e) => !viejos.has(e.id));
+    this.datos.elementos.splice(i < 0 ? this.datos.elementos.length : i, 0, ...nuevos);
+    c.muros = nuevos.map((m) => m.id);
   }
 
   /** Vecino del corte en el extremo indicado y su extremo libre. */
