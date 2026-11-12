@@ -1,0 +1,1805 @@
+import { CATALOGO, CATEGORIAS, dibujarSimbolo, itemPorClave, itemsDeCategoria } from './catalogo';
+import { cajaDe, cajaDeTodos, mover, posEtiqueta, puntoLocal, puntosClave, toca } from './elementos';
+import { inyectarEstilos } from './estilos';
+import { exportarPNG, type ImagenCroquis } from './exportar';
+import { aMundo, dist, formatoM, insetPoligono, proyectar } from './geometria';
+import { ICONOS } from './iconos';
+import {
+  datosVacios,
+  normalizarDatos,
+  nuevoId,
+  tieneDosPuntos,
+  type Abertura,
+  type Area,
+  type DatosCroquis,
+  type ConDosPuntos,
+  type Elemento,
+  type Mueble,
+  type Muro,
+  type Patron,
+  type Pt,
+  type Texto,
+  type Trazo,
+} from './modelo';
+import { dibujarEscena, type Vista } from './render';
+
+
+export type Herramienta =
+  | 'seleccionar'
+  | 'mano'
+  | 'muro'
+  | 'cuarto'
+  | 'chaflan'
+  | 'dividir'
+  | 'puerta'
+  | 'puerta2'
+  | 'ventana'
+  | 'area'
+  | 'mueble'
+  | 'texto'
+  | 'acceso'
+  | 'cota'
+  | 'linea'
+  | 'lapiz';
+
+/** `sep` deja un espacio después del botón para agrupar la barra. */
+const HERRAMIENTAS: { h: Herramienta; nombre: string; tecla: string; ayuda: string; sep?: true }[] = [
+  { h: 'seleccionar', nombre: 'Seleccionar', tecla: 'V', ayuda: 'Clic para seleccionar, arrastra para mover. Arrastra en vacío para seleccionar varios. Supr borra.' },
+  { h: 'mano', nombre: 'Mover vista', tecla: 'H', ayuda: 'Arrastra para desplazar la vista. La rueda del ratón hace zoom.', sep: true },
+  { h: 'muro', nombre: 'Muro', tecla: 'W', ayuda: 'Clic en cada esquina. Escribe una medida y Enter para fijar el largo. Doble clic o Esc para terminar.' },
+  { h: 'cuarto', nombre: 'Cuarto', tecla: 'Q', ayuda: 'Arrastra para crear un cuarto con sus 4 muros. Luego escribe su etiqueta; aparece al centro y puedes moverla con su manija.' },
+  { h: 'chaflan', nombre: 'Cortar esquina', tecla: 'C', ayuda: 'Clic en una esquina para cortarla en diagonal (chaflán). Luego ajusta la distancia arrastrando sus extremos o en el panel.' },
+  { h: 'dividir', nombre: 'Agregar esquina', tecla: 'E', ayuda: 'Clic sobre un muro para partirlo en dos. Luego arrastra la nueva esquina para darle otra forma al cuarto.', sep: true },
+  { h: 'puerta', nombre: 'Puerta', tecla: 'D', ayuda: 'Clic sobre un muro para colocar una puerta. R la gira, F cambia el lado.' },
+  { h: 'puerta2', nombre: 'Puerta de doble abatimiento', tecla: 'B', ayuda: 'Puerta de vaivén (abre hacia ambos lados). Activa "Doble puerta" para dos puertas que se juntan al centro, como en quirófanos.' },
+  { h: 'ventana', nombre: 'Ventana', tecla: 'N', ayuda: 'Clic sobre un muro para colocar una ventana.', sep: true },
+  { h: 'area', nombre: 'Área / sombreado', tecla: 'A', ayuda: 'Arrastra para un área rectangular, o haz clic en cada vértice y doble clic para cerrar.' },
+  { h: 'mueble', nombre: 'Mobiliario', tecla: 'M', ayuda: 'Elige un mueble en el panel y haz clic para colocarlo. R lo gira 90°.' },
+  { h: 'texto', nombre: 'Etiqueta', tecla: 'T', ayuda: 'Clic donde quieras la etiqueta y escribe el texto en el panel.', sep: true },
+  { h: 'acceso', nombre: 'Acceso', tecla: 'X', ayuda: 'Arrastra desde afuera hacia la entrada para marcar un acceso.' },
+  { h: 'cota', nombre: 'Cota', tecla: 'K', ayuda: 'Arrastra entre dos puntos para acotar la distancia.', sep: true },
+  { h: 'linea', nombre: 'Línea', tecla: 'L', ayuda: 'Arrastra para trazar una línea. Shift fija ángulos de 45°.' },
+  { h: 'lapiz', nombre: 'Lápiz', tecla: 'P', ayuda: 'Dibujo a mano alzada.' },
+];
+
+const COLORES = ['#111827', '#374151', '#6b7280', '#dc2626', '#ea580c', '#ca8a04', '#16a34a', '#0891b2', '#2563eb', '#7c3aed', '#db2777', '#92400e'];
+const RELLENOS = ['#bfdbfe', '#bbf7d0', '#fef08a', '#fecaca', '#fed7aa', '#e9d5ff', '#e5e7eb', '#a5f3fc'];
+const PATRONES: { v: Patron; n: string }[] = [
+  { v: 'ninguno', n: 'Sin patrón' },
+  { v: 'diagonal', n: 'Rayado diagonal' },
+  { v: 'cruzado', n: 'Cuadriculado' },
+  { v: 'horizontal', n: 'Rayado horizontal' },
+  { v: 'puntos', n: 'Puntos' },
+];
+
+const PASO_REJILLA = 0.05;
+/** Píxeles por metro al 100 % de zoom. */
+const ESCALA_INICIAL = 60;
+const MIN_ESCALA = 5;
+const MAX_ESCALA = 600;
+
+export interface OpcionesEditor {
+  datos?: DatosCroquis | null;
+  titulo?: string;
+  tema?: 'claro' | 'oscuro';
+  /** 'modal' muestra Guardar/Cancelar; 'pagina' muestra abrir/guardar archivo. */
+  modo?: 'modal' | 'pagina';
+  /** Opciones para la imagen que se entrega al guardar. */
+  exportar?: Parameters<typeof exportarPNG>[1];
+  alGuardar?: (r: ResultadoCroquis) => void;
+  alCancelar?: () => void;
+  alCambiar?: (datos: DatosCroquis) => void;
+}
+
+export interface ResultadoCroquis extends ImagenCroquis {
+  datos: DatosCroquis;
+}
+
+type Accion =
+  | { k: 'pan'; sx: number; sy: number; ox: number; oy: number }
+  | { k: 'mover'; ultimo: Pt; previo: string; movido: boolean }
+  | { k: 'manija'; id: string; cual: 'a' | 'b' | 'rot' | 'tam' | 'etq' | number; previo: string; vinculados: { el: Muro; extremo: 'a' | 'b' }[] }
+  | { k: 'marco'; a: Pt; b: Pt; sumar: boolean }
+  | { k: 'nuevo'; el: ConDosPuntos; inicio: Pt }
+  | { k: 'cuarto'; a: Pt; b: Pt }
+  | { k: 'trazo'; el: Trazo }
+  | { k: 'areaRect'; a: Pt; b: Pt };
+
+const h = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> & { className?: string } = {}, hijos: (Node | string)[] = []) => {
+  const e = document.createElement(tag);
+  Object.assign(e, props);
+  for (const c of hijos) e.append(c);
+  return e;
+};
+
+function div(css: string, hijos: (Node | string)[] = []) {
+  const d = h('div', {}, hijos);
+  d.style.cssText = css;
+  return d;
+}
+
+/** Esquinas de un rectángulo dado por dos esquinas opuestas. */
+function rectangulo(a: Pt, b: Pt): Pt[] {
+  return [a, { x: b.x, y: a.y }, b, { x: a.x, y: b.y }];
+}
+
+export class Editor {
+  readonly raiz: HTMLDivElement;
+  private canvas: HTMLCanvasElement;
+  private ctx: CanvasRenderingContext2D;
+  private panel: HTMLDivElement;
+  private estado: HTMLDivElement;
+  private zoomTxt: HTMLSpanElement;
+  private botonesHerr = new Map<Herramienta, HTMLButtonElement>();
+  private btnDeshacer!: HTMLButtonElement;
+  private btnRehacer!: HTMLButtonElement;
+
+  datos: DatosCroquis;
+  private vista: Vista = { escala: ESCALA_INICIAL, ox: 60, oy: 60 };
+  private herr: Herramienta = 'muro';
+  private seleccion = new Set<string>();
+  private historial: string[] = [];
+  private rehechos: string[] = [];
+  private accion: Accion | null = null;
+  private poli: { tipo: 'muro' | 'area'; puntos: Pt[] } | null = null;
+  private cursor: Pt | null = null;
+  private medida = '';
+  private shift = false;
+  private espacio = false;
+  private cuadricula = true;
+  private iman = true;
+  private muebleClave = 'mesa';
+  private categoria = 'general';
+  private fantasmaAng = 0;
+  private aberturaInvertir = false;
+  private estilo = { color: '#111827', muro: '#374151', grosorMuro: 0.15, relleno: '#bfdbfe', patron: 'ninguno' as Patron, acceso: '#16a34a', fondoCuarto: '#ffffff', dobleHoja: false, chaflan: 1 };
+  private pendiente: string | null = null;
+  private punteros = new Map<number, Pt>();
+  private pellizco: { d: number; c: Pt; escala: number; ox: number; oy: number } | null = null;
+  private cambiado = false;
+  private dibujoPedido = false;
+  private observador: ResizeObserver;
+  private quitarTeclas: () => void;
+
+  constructor(
+    contenedor: HTMLElement,
+    private o: OpcionesEditor = {},
+  ) {
+    inyectarEstilos();
+    this.datos = normalizarDatos(o.datos ?? datosVacios());
+    this.raiz = h('div', { className: 'crq-raiz' });
+    this.raiz.dataset.tema = o.tema ?? 'claro';
+    this.canvas = h('canvas');
+    this.ctx = this.canvas.getContext('2d')!;
+    this.panel = h('div', { className: 'crq-panel' });
+    this.estado = h('div', { className: 'crq-estado' });
+    this.zoomTxt = h('span', { className: 'crq-zoom' });
+    this.construir();
+    contenedor.append(this.raiz);
+    this.observador = new ResizeObserver(() => this.ajustarTamano());
+    this.observador.observe(this.canvas.parentElement!);
+    this.quitarTeclas = this.escucharTeclas();
+    this.escucharPunteros();
+    this.ajustarTamano();
+    if (this.datos.elementos.length) {
+      this.herr = 'seleccionar';
+      this.encuadrar();
+    }
+    this.cambiarHerramienta(this.herr);
+  }
+
+  destruir() {
+    this.observador.disconnect();
+    this.quitarTeclas();
+    this.raiz.remove();
+  }
+
+  // ───────────────────────── Interfaz ─────────────────────────
+
+  private construir() {
+    const barra = h('div', { className: 'crq-barra' });
+    barra.append(h('span', { className: 'crq-titulo', textContent: this.o.titulo ?? 'Croquis' }));
+    this.btnDeshacer = this.boton(ICONOS.deshacer, 'Deshacer (Ctrl+Z)', () => this.deshacer());
+    this.btnRehacer = this.boton(ICONOS.rehacer, 'Rehacer (Ctrl+Y)', () => this.rehacer());
+    barra.append(this.btnDeshacer, this.btnRehacer, h('span', { className: 'crq-sep' }));
+    barra.append(
+      this.boton('−', 'Alejar', () => this.zoom(1 / 1.25)),
+      this.zoomTxt,
+      this.boton('+', 'Acercar', () => this.zoom(1.25)),
+      this.boton('Ajustar', 'Ver todo el croquis', () => this.encuadrar()),
+      h('span', { className: 'crq-sep' }),
+    );
+    const alternar = (txt: string, titulo: string, get: () => boolean, set: (v: boolean) => void) => {
+      const b = this.boton(txt, titulo, () => {
+        set(!get());
+        b.classList.toggle('crq-activo', get());
+        this.dibujar();
+      });
+      b.classList.toggle('crq-activo', get());
+      return b;
+    };
+    barra.append(
+      alternar('Cuadrícula', 'Mostrar cuadrícula', () => this.cuadricula, (v) => (this.cuadricula = v)),
+      alternar('Imán', 'Ajustar a la cuadrícula (5 cm) y a las esquinas', () => this.iman, (v) => (this.iman = v)),
+      alternar('Medidas', 'Mostrar la medida de cada muro', () => this.datos.opciones.medidasMuros, (v) => {
+        this.datos.opciones.medidasMuros = v;
+        this.notificar();
+      }),
+    );
+    barra.append(h('span', { className: 'crq-esp' }));
+    if (this.o.modo === 'modal') {
+      barra.append(
+        this.boton('Cancelar', 'Cerrar sin guardar', () => this.cancelar()),
+        this.boton('Guardar croquis', 'Guardar y volver', () => this.guardar(), 'crq-primario'),
+      );
+    } else {
+      barra.append(
+        this.boton('Nuevo', 'Empezar un croquis vacío', () => {
+          if (!this.datos.elementos.length || confirm('¿Borrar todo el croquis actual?')) {
+            this.registrar();
+            this.datos.elementos = [];
+            this.seleccion.clear();
+            this.notificar();
+            this.actualizarPanel();
+          }
+        }),
+        this.boton('Abrir', 'Abrir un archivo .croquis.json', () => this.abrirArchivo()),
+        this.boton('Guardar', 'Descargar como .croquis.json', () => this.descargar('json')),
+        this.boton('PNG', 'Descargar imagen', () => this.descargar('png'), 'crq-primario'),
+      );
+    }
+
+    const herr = h('div', { className: 'crq-herr' });
+    for (const t of HERRAMIENTAS) {
+      const b = this.boton(ICONOS[t.h], `${t.nombre} (${t.tecla})`, () => this.cambiarHerramienta(t.h));
+      this.botonesHerr.set(t.h, b);
+      herr.append(b);
+      if (t.sep) herr.append(div('height:6px'));
+    }
+    const lienzo = h('div', { className: 'crq-lienzo' }, [this.canvas]);
+    const cuerpo = h('div', { className: 'crq-cuerpo' }, [herr, lienzo, this.panel]);
+    this.raiz.append(barra, cuerpo, this.estado);
+  }
+
+  private boton(contenido: string, titulo: string, fn: () => void, clase = '') {
+    const b = h('button', { type: 'button', title: titulo, className: clase });
+    b.innerHTML = contenido;
+    b.addEventListener('click', fn);
+    return b;
+  }
+
+  private cambiarHerramienta(t: Herramienta) {
+    this.terminarPoli();
+    this.herr = t;
+    this.accion = null;
+    this.medida = '';
+    for (const [k, b] of this.botonesHerr) b.classList.toggle('crq-activo', k === t);
+    if (t !== 'seleccionar') this.seleccion.clear();
+    this.canvas.style.cursor = t === 'mano' ? 'grab' : t === 'seleccionar' ? 'default' : 'crosshair';
+    this.actualizarPanel();
+    this.actualizarEstado();
+    this.dibujar();
+  }
+
+  private actualizarEstado() {
+    const info = HERRAMIENTAS.find((x) => x.h === this.herr)!;
+    const partes = [`<b>${info.nombre}</b> · ${info.ayuda}`];
+    if (this.medida) partes.push(`Largo: <b>${this.medida} m</b> (Enter)`);
+    if (this.cursor) partes.push(`<span style="margin-left:auto">x ${this.cursor.x.toFixed(2)} · y ${this.cursor.y.toFixed(2)} m</span>`);
+    this.estado.innerHTML = partes.join(' &nbsp; ');
+    this.zoomTxt.textContent = `${Math.round((this.vista.escala / ESCALA_INICIAL) * 100)}%`;
+    this.btnDeshacer.disabled = !this.historial.length;
+    this.btnRehacer.disabled = !this.rehechos.length;
+  }
+
+  // ───────────────────────── Panel lateral ─────────────────────────
+
+  private seleccionados(): Elemento[] {
+    return this.datos.elementos.filter((e) => this.seleccion.has(e.id));
+  }
+
+  /** Si la selección es exactamente un cuarto (su piso y sus muros), devuelve el piso. */
+  private cuartoSeleccionado(): Area | null {
+    const sel = this.seleccionados();
+    const pisos = sel.filter((e): e is Area => e.tipo === 'area');
+    if (pisos.length !== 1 || !pisos[0].muros?.length) return null;
+    const muros = new Set(pisos[0].muros);
+    return sel.every((e) => e === pisos[0] || muros.has(e.id)) ? pisos[0] : null;
+  }
+
+  /** Ids que se seleccionan al elegir un elemento (un cuarto arrastra sus muros). */
+  private grupoDe(el: Elemento): string[] {
+    if (el.tipo === 'area' && el.muros?.length) return [el.id, ...el.muros];
+    return [el.id];
+  }
+
+  /** Esquinas de un cuarto (inicio de cada muro, en orden). */
+  private esquinasCuarto(el: Area): Pt[] {
+    const porId = new Map(this.datos.elementos.map((e) => [e.id, e]));
+    return (el.muros ?? []).map((id) => porId.get(id)).filter((m): m is Muro => m?.tipo === 'muro').map((m) => m.a);
+  }
+
+  /** Ajusta el piso de cada cuarto a sus muros (por dentro). */
+  private sincronizarCuartos() {
+    const porId = new Map(this.datos.elementos.map((e) => [e.id, e]));
+    for (const el of this.datos.elementos) {
+      if (el.tipo !== 'area' || !el.muros?.length) continue;
+      const muros = el.muros.map((id) => porId.get(id));
+      if (muros.some((m) => !m || m.tipo !== 'muro')) continue;
+      const ms = muros as Muro[];
+      const g = Math.max(...ms.map((m) => m.grosor)) / 2;
+      el.puntos = insetPoligono(ms.map((m) => ({ ...m.a })), g);
+    }
+  }
+
+  private actualizarPanel() {
+    const p = this.panel;
+    p.innerHTML = '';
+    this.pendiente = null;
+    const sel = this.seleccionados();
+    const cuarto = this.cuartoSeleccionado();
+    if (cuarto) return this.panelPropiedades(cuarto);
+    if (sel.length === 1) return this.panelPropiedades(sel[0]);
+    if (sel.length > 1) {
+      p.append(h('h3', { textContent: `${sel.length} elementos` }));
+      p.append(this.campoColor('Color', this.estilo.color, (c) => sel.forEach((e) => this.aplicarColor(e, c))));
+      p.append(this.accionesSeleccion());
+      return;
+    }
+    if (this.herr === 'mueble') {
+      p.append(h('h3', { textContent: 'Mobiliario' }));
+      p.append(
+        this.campoSelect('Categoría', this.categoria, CATEGORIAS.map((c) => [c.id, c.nombre]), (v) => {
+          this.categoria = v;
+          const items = itemsDeCategoria(v);
+          if (!items.some((i) => i.clave === this.muebleClave)) this.muebleClave = items[0].clave;
+          this.actualizarPanel();
+        }, false),
+      );
+      const norma = CATEGORIAS.find((c) => c.id === this.categoria)?.norma;
+      if (norma) p.append(h('p', { textContent: `Mobiliario básico según ${norma}.` }));
+      const cat = h('div', { className: 'crq-catalogo' });
+      for (const it of itemsDeCategoria(this.categoria)) {
+        const c = h('canvas', { width: 128, height: 88 });
+        const g = c.getContext('2d')!;
+        const k = Math.min(100 / it.ancho, 64 / it.alto, 110);
+        g.translate(64, 44);
+        g.scale(k, k);
+        dibujarSimbolo(g, it.clave, it.ancho, it.alto, '#111827', 2.5 / k);
+        const b = h('button', { type: 'button', title: it.nombre, className: it.clave === this.muebleClave ? 'crq-activo' : '' }, [c, it.nombre]);
+        b.addEventListener('click', () => {
+          this.muebleClave = it.clave;
+          this.fantasmaAng = 0;
+          this.actualizarPanel();
+        });
+        cat.append(b);
+      }
+      p.append(cat);
+      return;
+    }
+    const info = HERRAMIENTAS.find((x) => x.h === this.herr)!;
+    p.append(h('h3', { textContent: info.nombre }), h('p', { textContent: info.ayuda }));
+    if (this.herr === 'muro' || this.herr === 'cuarto') {
+      p.append(this.campoNum('Grosor del muro (m)', this.estilo.grosorMuro, 0.05, 0.6, 0.01, (v) => (this.estilo.grosorMuro = v)));
+      p.append(this.campoColor('Color del muro', this.estilo.muro, (c) => (this.estilo.muro = c)));
+      if (this.herr === 'cuarto') p.append(this.campoColor('Color de fondo', this.estilo.fondoCuarto, (c) => (this.estilo.fondoCuarto = c), ['#ffffff', ...RELLENOS]));
+    } else if (this.herr === 'chaflan') {
+      p.append(this.campoNum('Distancia del corte (m)', this.estilo.chaflan, 0.1, 20, 0.05, (v) => (this.estilo.chaflan = v)));
+    } else if (this.herr === 'puerta2') {
+      p.append(this.campoCheck('Doble puerta (dos puertas que se juntan al centro, tipo quirófano)', this.estilo.dobleHoja, (v) => (this.estilo.dobleHoja = v), false));
+    } else if (this.herr === 'area') {
+      p.append(this.campoColor('Relleno', this.estilo.relleno, (c) => (this.estilo.relleno = c), RELLENOS));
+      p.append(this.campoSelect('Patrón', this.estilo.patron, PATRONES.map((x) => [x.v, x.n]), (v) => (this.estilo.patron = v as Patron)));
+    } else if (this.herr === 'acceso') {
+      p.append(this.campoColor('Color', this.estilo.acceso, (c) => (this.estilo.acceso = c)));
+    } else if (this.herr !== 'seleccionar' && this.herr !== 'mano' && this.herr !== 'puerta' && this.herr !== 'ventana' && this.herr !== 'dividir') {
+      p.append(this.campoColor('Color', this.estilo.color, (c) => (this.estilo.color = c)));
+    }
+    if (this.herr === 'seleccionar' || this.herr === 'mano') {
+      p.append(
+        h('h3', { textContent: 'Atajos' }),
+        h('p', { innerHTML: 'Ctrl+Z deshacer · Ctrl+Y rehacer<br>Supr borrar · Ctrl+D duplicar<br>Flechas mover · R girar<br>Rueda: zoom · Espacio+arrastrar: mover vista' }),
+      );
+    }
+  }
+
+  private panelPropiedades(el: Elemento) {
+    const p = this.panel;
+    const nombres: Record<Elemento['tipo'], string> = {
+      muro: (el as Muro).chaflan ? 'Corte de esquina' : 'Muro',
+      puerta: 'Puerta',
+      ventana: 'Ventana',
+      area: (el as Area).muros?.length ? 'Cuarto' : 'Área',
+      mueble: itemPorClave((el as Mueble).clave)?.nombre ?? 'Mueble',
+      texto: 'Etiqueta',
+      acceso: 'Acceso',
+      cota: 'Cota',
+      linea: 'Línea',
+      trazo: 'Trazo',
+    };
+    p.append(h('h3', { textContent: nombres[el.tipo] }));
+    switch (el.tipo) {
+      case 'muro':
+        if (el.chaflan) {
+          p.append(h('p', { textContent: 'Corte de esquina. Arrastra sus extremos sobre los muros o cambia la distancia.' }));
+          p.append(this.campoNum('Distancia del corte (m)', +this.distanciaChaflan(el).toFixed(2), 0.05, 50, 0.05, (v) => this.aplicarChaflan(el, v)));
+          p.append(this.campoNum('Grosor (m)', el.grosor, 0.05, 0.6, 0.01, (v) => (el.grosor = v)));
+          p.append(this.campoColor('Color', el.color, (c) => (el.color = c)));
+          break;
+        }
+        p.append(this.campoNum('Largo (m)', +dist(el.a, el.b).toFixed(2), 0.05, 200, 0.05, (v) => {
+          const l = dist(el.a, el.b) || 1;
+          el.b = { x: el.a.x + ((el.b.x - el.a.x) / l) * v, y: el.a.y + ((el.b.y - el.a.y) / l) * v };
+        }));
+        p.append(this.campoNum('Grosor (m)', el.grosor, 0.05, 0.6, 0.01, (v) => (el.grosor = v)));
+        p.append(this.campoColor('Color', el.color, (c) => (el.color = c)));
+        break;
+      case 'puerta':
+      case 'ventana':
+        p.append(this.campoNum('Ancho (m)', el.ancho, 0.3, 6, 0.05, (v) => (el.ancho = v)));
+        if (el.tipo === 'puerta') {
+          p.append(this.campoCheck('Doble abatimiento (vaivén)', !!el.vaiven, (v) => (el.vaiven = v)));
+          p.append(this.campoCheck('Doble puerta (dos puertas)', el.hojas === 2, (v) => {
+            el.hojas = v ? 2 : 1;
+            this.actualizarPanel();
+          }));
+          p.append(this.campoCheck(el.vaiven ? 'Hoja principal del otro lado' : 'Abre hacia el otro lado', el.invertir, (v) => (el.invertir = v)));
+          if (el.hojas !== 2) p.append(this.campoCheck('Bisagra del otro lado', el.espejo, (v) => (el.espejo = v)));
+        }
+        p.append(this.campoColor('Color', el.color, (c) => (el.color = c)));
+        break;
+      case 'area': {
+        p.append(this.campoTexto('Etiqueta', el.nombre, (v) => (el.nombre = v)));
+        p.append(this.campoNum('Tamaño de letra (cm)', Math.round((el.tamEtq ?? 0.3) * 100), 5, 300, 5, (v) => (el.tamEtq = v / 100)));
+        p.append(this.campoCheck('Mostrar superficie (m²)', el.mostrarM2, (v) => (el.mostrarM2 = v)));
+        p.append(this.campoColor('Color de letra', el.colorEtq ?? '#111827', (c) => (el.colorEtq = c)));
+        if (el.etqPos) {
+          p.append(h('div', { className: 'crq-botones' }, [
+            this.boton('Centrar etiqueta', 'Regresa la etiqueta al centro', () => this.editar(() => {
+              el.etqPos = null;
+              this.actualizarPanel();
+            }, true)),
+          ]));
+        }
+        p.append(this.campoColor(el.muros?.length ? 'Color de fondo' : 'Relleno', el.relleno, (c) => (el.relleno = c), el.muros?.length ? ['#ffffff', ...RELLENOS] : RELLENOS));
+        p.append(this.campoNum('Opacidad (%)', Math.round(el.opacidad * 100), 0, 100, 5, (v) => (el.opacidad = v / 100)));
+        p.append(this.campoSelect('Patrón', el.patron, PATRONES.map((x) => [x.v, x.n]), (v) => (el.patron = v as Patron)));
+        p.append(this.campoColor(el.muros?.length ? 'Color del patrón' : 'Borde y patrón', el.borde, (c) => (el.borde = c)));
+        break;
+      }
+      case 'mueble':
+        p.append(this.campoTexto('Etiqueta', el.etiqueta, (v) => (el.etiqueta = v)));
+        p.append(this.campoNum('Ancho (m)', el.ancho, 0.1, 20, 0.05, (v) => (el.ancho = v)));
+        p.append(this.campoNum('Fondo (m)', el.alto, 0.1, 20, 0.05, (v) => (el.alto = v)));
+        p.append(this.campoNum('Ángulo (°)', Math.round((el.ang * 180) / Math.PI), -360, 360, 15, (v) => (el.ang = (v * Math.PI) / 180)));
+        p.append(this.campoColor('Color', el.color, (c) => (el.color = c)));
+        break;
+      case 'texto': {
+        const t = this.campoTexto('Texto', el.texto, (v) => (el.texto = v), true);
+        p.append(t);
+        p.append(this.campoNum('Tamaño (m)', el.tam, 0.05, 3, 0.05, (v) => (el.tam = v)));
+        p.append(this.campoCheck('Negrita', el.negrita, (v) => (el.negrita = v)));
+        p.append(this.campoNum('Ángulo (°)', Math.round((el.ang * 180) / Math.PI), -360, 360, 15, (v) => (el.ang = (v * Math.PI) / 180)));
+        p.append(this.campoColor('Color', el.color, (c) => (el.color = c)));
+        break;
+      }
+      case 'acceso':
+        p.append(this.campoTexto('Texto', el.texto, (v) => (el.texto = v)));
+        p.append(this.campoColor('Color', el.color, (c) => (el.color = c)));
+        break;
+      case 'cota':
+        p.append(h('p', { textContent: `Distancia: ${formatoM(dist(el.a, el.b))}` }));
+        p.append(this.campoColor('Color', el.color, (c) => (el.color = c)));
+        break;
+      case 'linea':
+        p.append(this.campoNum('Grosor (cm)', Math.round(el.grosor * 100), 1, 30, 1, (v) => (el.grosor = v / 100)));
+        p.append(this.campoCheck('Discontinua', el.discontinua, (v) => (el.discontinua = v)));
+        p.append(this.campoColor('Color', el.color, (c) => (el.color = c)));
+        break;
+      case 'trazo':
+        p.append(this.campoNum('Grosor (cm)', Math.round(el.grosor * 100), 1, 30, 1, (v) => (el.grosor = v / 100)));
+        p.append(this.campoColor('Color', el.color, (c) => (el.color = c)));
+        break;
+    }
+    p.append(this.accionesSeleccion());
+  }
+
+  private accionesSeleccion() {
+    const cont = h('div', { className: 'crq-botones' });
+    const sel = this.seleccionados();
+    if (sel.some((e) => e.tipo === 'mueble' || e.tipo === 'puerta' || e.tipo === 'ventana' || e.tipo === 'texto')) {
+      cont.append(this.boton('Girar 90°', 'Girar (R)', () => this.girarSeleccion(Math.PI / 2)));
+    }
+    cont.append(
+      this.boton('Duplicar', 'Ctrl+D', () => this.duplicar()),
+      this.boton('Al frente', 'Dibujar encima', () => this.reordenar(true)),
+      this.boton('Al fondo', 'Dibujar debajo', () => this.reordenar(false)),
+      this.boton('Eliminar', 'Supr', () => this.eliminarSeleccion(), 'crq-peligro'),
+    );
+    return cont;
+  }
+
+  /** Registra el estado previo una sola vez por edición del panel. */
+  private editar(fn: () => void, confirmar: boolean) {
+    if (this.pendiente === null) this.pendiente = this.instantanea();
+    fn();
+    if (confirmar) {
+      this.historial.push(this.pendiente);
+      this.rehechos = [];
+      this.pendiente = null;
+    }
+    this.notificar();
+  }
+
+  private campo(etiqueta: string, control: HTMLElement, fila = false) {
+    return h('label', { className: 'crq-campo' + (fila ? ' crq-fila' : '') }, [etiqueta, control]);
+  }
+
+  private campoNum(etq: string, valor: number, min: number, max: number, paso: number, set: (v: number) => void) {
+    const i = h('input', { type: 'number', value: String(valor), min: String(min), max: String(max), step: String(paso) });
+    const aplicar = (conf: boolean) => {
+      const v = parseFloat(i.value);
+      if (Number.isFinite(v) && v >= min && v <= max) this.editar(() => set(v), conf);
+    };
+    i.addEventListener('input', () => aplicar(false));
+    i.addEventListener('change', () => aplicar(true));
+    return this.campo(etq, i);
+  }
+
+  private campoTexto(etq: string, valor: string, set: (v: string) => void, largo = false) {
+    const i = largo ? h('textarea', { value: valor }) : h('input', { type: 'text', value: valor });
+    i.addEventListener('input', () => this.editar(() => set(i.value), false));
+    i.addEventListener('change', () => this.editar(() => set(i.value), true));
+    return this.campo(etq, i);
+  }
+
+  private campoCheck(etq: string, valor: boolean, set: (v: boolean) => void, historial = true) {
+    const i = h('input', { type: 'checkbox', checked: valor });
+    i.addEventListener('change', () => (historial ? this.editar(() => set(i.checked), true) : (set(i.checked), this.dibujar())));
+    return this.campo(etq, i, true);
+  }
+
+  private campoSelect(etq: string, valor: string, ops: [string, string][], set: (v: string) => void, historial = true) {
+    const s = h('select');
+    for (const [v, n] of ops) s.append(h('option', { value: v, textContent: n, selected: v === valor }));
+    s.addEventListener('change', () => (historial ? this.editar(() => set(s.value), true) : set(s.value)));
+    return this.campo(etq, s);
+  }
+
+  private campoColor(etq: string, valor: string, set: (c: string) => void, paleta = COLORES) {
+    const i = h('input', { type: 'color', value: valor });
+    i.addEventListener('input', () => this.editar(() => set(i.value), false));
+    i.addEventListener('change', () => this.editar(() => set(i.value), true));
+    const muestras = h('div', { className: 'crq-colores' });
+    for (const c of paleta) {
+      const b = h('button', { type: 'button', title: c });
+      b.style.background = c;
+      b.addEventListener('click', () => {
+        i.value = c;
+        this.editar(() => set(c), true);
+      });
+      muestras.append(b);
+    }
+    const cont = h('div', { className: 'crq-campo' }, [h('span', { textContent: etq }), div('display:flex;gap:6px;align-items:center', [i, muestras])]);
+    return cont;
+  }
+
+  private aplicarColor(el: Elemento, c: string) {
+    if (el.tipo === 'area') el.borde = c;
+    else el.color = c;
+  }
+
+  // ───────────────────────── Historial ─────────────────────────
+
+  private instantanea() {
+    return JSON.stringify(this.datos.elementos);
+  }
+
+  /** Guarda el estado actual antes de modificarlo. */
+  private registrar(previo = this.instantanea()) {
+    this.historial.push(previo);
+    if (this.historial.length > 200) this.historial.shift();
+    this.rehechos = [];
+  }
+
+  deshacer() {
+    this.terminarPoli();
+    const prev = this.historial.pop();
+    if (prev === undefined) return;
+    this.rehechos.push(this.instantanea());
+    this.datos.elementos = JSON.parse(prev);
+    this.limpiarSeleccion();
+    this.notificar();
+  }
+
+  rehacer() {
+    const sig = this.rehechos.pop();
+    if (sig === undefined) return;
+    this.historial.push(this.instantanea());
+    this.datos.elementos = JSON.parse(sig);
+    this.limpiarSeleccion();
+    this.notificar();
+  }
+
+  private limpiarSeleccion() {
+    const ids = new Set(this.datos.elementos.map((e) => e.id));
+    for (const id of [...this.seleccion]) if (!ids.has(id)) this.seleccion.delete(id);
+    this.actualizarPanel();
+  }
+
+  private notificar() {
+    this.sincronizarCuartos();
+    this.cambiado = true;
+    this.o.alCambiar?.(this.datos);
+    this.actualizarEstado();
+    this.dibujar();
+  }
+
+  private agregar(...els: Elemento[]) {
+    this.registrar();
+    this.datos.elementos.push(...els);
+    this.notificar();
+  }
+
+  // ───────────────────────── Acciones sobre la selección ─────────────────────────
+
+  eliminarSeleccion() {
+    if (!this.seleccion.size) return;
+    this.registrar();
+    this.datos.elementos = this.datos.elementos.filter((e) => !this.seleccion.has(e.id));
+    this.seleccion.clear();
+    this.actualizarPanel();
+    this.notificar();
+  }
+
+  private duplicar() {
+    const sel = this.seleccionados();
+    if (!sel.length) return;
+    const ids = new Map<string, string>();
+    const copias = sel.map((e) => {
+      const c = JSON.parse(JSON.stringify(e)) as Elemento;
+      c.id = nuevoId();
+      ids.set(e.id, c.id);
+      mover(c, 0.5, 0.5);
+      return c;
+    });
+    for (const c of copias) {
+      if (c.tipo === 'muro' && c.chaflan) {
+        const [x, y] = c.chaflan.muros.map((m) => ids.get(m));
+        if (x && y) c.chaflan.muros = [x, y];
+        else delete c.chaflan;
+      }
+      if (c.tipo === 'area' && c.muros) {
+        const nuevos = c.muros.map((m) => ids.get(m));
+        if (nuevos.every(Boolean)) c.muros = nuevos as string[];
+        else delete c.muros;
+      }
+    }
+    this.agregar(...copias);
+    this.seleccion = new Set(copias.map((c) => c.id));
+    this.actualizarPanel();
+  }
+
+  private reordenar(alFrente: boolean) {
+    this.registrar();
+    const sel = this.datos.elementos.filter((e) => this.seleccion.has(e.id));
+    const resto = this.datos.elementos.filter((e) => !this.seleccion.has(e.id));
+    this.datos.elementos = alFrente ? [...resto, ...sel] : [...sel, ...resto];
+    this.notificar();
+  }
+
+  private girarSeleccion(ang: number) {
+    const sel = this.seleccionados();
+    if (!sel.length) return;
+    this.registrar();
+    for (const el of sel) {
+      if (el.tipo === 'mueble' || el.tipo === 'texto') el.ang = normalizarAng(el.ang + ang);
+      else if (el.tipo === 'puerta') {
+        // Recorre las 4 orientaciones de la puerta sobre el mismo muro
+        if (!el.invertir && !el.espejo) el.espejo = true;
+        else if (el.espejo && !el.invertir) el.invertir = true;
+        else if (el.invertir && el.espejo) el.espejo = false;
+        else el.invertir = false;
+      } else if (el.tipo === 'ventana') el.ang = normalizarAng(el.ang + ang);
+    }
+    this.actualizarPanel();
+    this.notificar();
+  }
+
+  private moverSeleccion(dx: number, dy: number) {
+    for (const el of this.seleccionados()) mover(el, dx, dy);
+  }
+
+  // ───────────────────────── Vista ─────────────────────────
+
+  private ajustarTamano() {
+    const r = this.canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    this.canvas.width = Math.max(1, Math.round(r.width * dpr));
+    this.canvas.height = Math.max(1, Math.round(r.height * dpr));
+    this.dibujarAhora();
+  }
+
+  encuadrar() {
+    const r = this.canvas.getBoundingClientRect();
+    const c = cajaDeTodos(this.datos.elementos);
+    if (!c || r.width < 10) {
+      this.vista = { escala: ESCALA_INICIAL, ox: 60, oy: 60 };
+    } else {
+      const w = Math.max(c.maxx - c.minx, 1);
+      const hh = Math.max(c.maxy - c.miny, 1);
+      const escala = clamp(Math.min((r.width - 80) / w, (r.height - 80) / hh), MIN_ESCALA, MAX_ESCALA);
+      this.vista = { escala, ox: r.width / 2 - ((c.minx + c.maxx) / 2) * escala, oy: r.height / 2 - ((c.miny + c.maxy) / 2) * escala };
+    }
+    this.actualizarEstado();
+    this.dibujar();
+  }
+
+  private zoom(f: number, centro?: { x: number; y: number }) {
+    const r = this.canvas.getBoundingClientRect();
+    const c = centro ?? { x: r.width / 2, y: r.height / 2 };
+    const nueva = clamp(this.vista.escala * f, MIN_ESCALA, MAX_ESCALA);
+    const k = nueva / this.vista.escala;
+    this.vista = { escala: nueva, ox: c.x - (c.x - this.vista.ox) * k, oy: c.y - (c.y - this.vista.oy) * k };
+    this.actualizarEstado();
+    this.dibujar();
+  }
+
+  private aMundo(sx: number, sy: number): Pt {
+    return { x: (sx - this.vista.ox) / this.vista.escala, y: (sy - this.vista.oy) / this.vista.escala };
+  }
+
+  private enPantalla(e: { clientX: number; clientY: number }) {
+    const r = this.canvas.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  }
+
+  // ───────────────────────── Ajustes del cursor ─────────────────────────
+
+  private tol(px = 8) {
+    return px / this.vista.escala;
+  }
+
+  /** Ajusta un punto a esquinas existentes, ángulos rectos y la rejilla. */
+  private ajustar(p: Pt, ref?: Pt | null, excluir?: Set<string>): Pt {
+    // 1. Esquinas y extremos existentes
+    let mejor: Pt | null = null;
+    let md = this.tol(10);
+    for (const el of this.datos.elementos) {
+      if (excluir?.has(el.id)) continue;
+      for (const q of puntosClave(el)) {
+        const d = dist(p, q);
+        if (d < md) {
+          md = d;
+          mejor = q;
+        }
+      }
+    }
+    if (this.poli && this.poli.puntos.length > 1) {
+      const q = this.poli.puntos[0];
+      if (dist(p, q) < md) mejor = q;
+    }
+    if (mejor) return { x: mejor.x, y: mejor.y };
+    let r = { ...p };
+    if (ref) {
+      const dx = p.x - ref.x;
+      const dy = p.y - ref.y;
+      const l = Math.hypot(dx, dy);
+      if (this.shift) {
+        const ang = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * (Math.PI / 4);
+        r = { x: ref.x + Math.cos(ang) * l, y: ref.y + Math.sin(ang) * l };
+        if (this.iman) {
+          const lr = Math.round(l / PASO_REJILLA) * PASO_REJILLA;
+          r = { x: ref.x + Math.cos(ang) * lr, y: ref.y + Math.sin(ang) * lr };
+        }
+        return r;
+      }
+      // Ortogonal automático cerca de 0°/90°
+      if (Math.abs(dy) < Math.abs(dx) * 0.1) r.y = ref.y;
+      else if (Math.abs(dx) < Math.abs(dy) * 0.1) r.x = ref.x;
+    }
+    if (this.iman) {
+      if (!ref || r.x !== ref.x) r.x = redondear(r.x);
+      if (!ref || r.y !== ref.y) r.y = redondear(r.y);
+    }
+    return r;
+  }
+
+  /** Busca el muro más cercano para colocar una puerta o ventana. */
+  private colocarEnMuro(p: Pt, ancho: number): { p: Pt; ang: number; grosor: number } | null {
+    let mejor: { p: Pt; ang: number; grosor: number } | null = null;
+    let md = Math.max(this.tol(25), 0.3);
+    for (const el of this.datos.elementos) {
+      if (el.tipo !== 'muro') continue;
+      const l = dist(el.a, el.b);
+      if (l < 0.01) continue;
+      const { pt, t } = proyectar(p, el.a, el.b);
+      const d = dist(p, pt);
+      if (d < md) {
+        md = d;
+        const minT = Math.min(0.5, ancho / 2 / l);
+        let tt = clamp(t, minT, 1 - minT);
+        if (this.iman) tt = clamp(Math.round((tt * l) / PASO_REJILLA) * PASO_REJILLA / l, minT, 1 - minT);
+        mejor = {
+          p: { x: el.a.x + (el.b.x - el.a.x) * tt, y: el.a.y + (el.b.y - el.a.y) * tt },
+          ang: Math.atan2(el.b.y - el.a.y, el.b.x - el.a.x),
+          grosor: el.grosor,
+        };
+      }
+    }
+    return mejor;
+  }
+
+  private nuevaAbertura(herr: 'puerta' | 'puerta2' | 'ventana', p: Pt): Abertura {
+    const tipo = herr === 'ventana' ? 'ventana' : 'puerta';
+    const vaiven = herr === 'puerta2';
+    const hojas: 1 | 2 = vaiven && this.estilo.dobleHoja ? 2 : 1;
+    const ancho = tipo === 'ventana' ? 1.2 : hojas === 2 ? 1.4 : 0.9;
+    const m = this.colocarEnMuro(p, ancho);
+    return {
+      id: nuevoId(),
+      tipo,
+      p: m?.p ?? (this.iman ? { x: redondear(p.x), y: redondear(p.y) } : p),
+      ang: m ? m.ang : this.fantasmaAng,
+      ancho,
+      grosor: m?.grosor ?? this.estilo.grosorMuro,
+      invertir: this.aberturaInvertir,
+      espejo: false,
+      ...(vaiven ? { vaiven, hojas } : {}),
+      color: '#111827',
+    };
+  }
+
+  private nuevoMueble(p: Pt): Mueble {
+    const it = itemPorClave(this.muebleClave) ?? CATALOGO[0];
+    return {
+      id: nuevoId(),
+      tipo: 'mueble',
+      clave: it.clave,
+      p: this.iman ? { x: redondear(p.x), y: redondear(p.y) } : p,
+      ancho: it.ancho,
+      alto: it.alto,
+      ang: this.fantasmaAng,
+      color: '#111827',
+      etiqueta: '',
+    };
+  }
+
+  // ───────────────────────── Polilíneas (muros y áreas) ─────────────────────────
+
+  private terminarPoli() {
+    const poli = this.poli;
+    this.poli = null;
+    this.medida = '';
+    if (poli?.tipo === 'area' && poli.puntos.length >= 3) {
+      this.agregar(this.nuevaArea(poli.puntos));
+    }
+    this.dibujar();
+  }
+
+  private nuevaArea(puntos: Pt[]): Area {
+    return {
+      id: nuevoId(),
+      tipo: 'area',
+      puntos: puntos.map((p) => ({ ...p })),
+      relleno: this.estilo.relleno,
+      opacidad: 0.5,
+      patron: this.estilo.patron,
+      borde: '#475569',
+      nombre: '',
+      mostrarM2: true,
+    };
+  }
+
+  /** Crea los muros de un cuarto con su piso ligado y deja lista la etiqueta para escribirla. */
+  private crearCuarto(pts: Pt[]) {
+    const muros = pts.map((q, i) => this.nuevoMuro(q, pts[(i + 1) % pts.length]));
+    const piso: Area = {
+      ...this.nuevaArea(pts),
+      relleno: this.estilo.fondoCuarto,
+      opacidad: 1,
+      patron: 'ninguno',
+      muros: muros.map((m) => m.id),
+      tamEtq: 0.3,
+    };
+    this.registrar();
+    // El piso va primero para que se dibuje debajo de todo
+    this.datos.elementos.unshift(piso);
+    this.datos.elementos.push(...muros);
+    this.notificar();
+    this.cambiarHerramienta('seleccionar');
+    this.seleccion = new Set(this.grupoDe(piso));
+    this.actualizarPanel();
+    this.panel.querySelector<HTMLInputElement>('input[type=text]')?.focus();
+  }
+
+  private nuevoMuro(a: Pt, b: Pt): Muro {
+    return { id: nuevoId(), tipo: 'muro', a: { ...a }, b: { ...b }, grosor: this.estilo.grosorMuro, color: this.estilo.muro };
+  }
+
+  private clicPoli(p: Pt) {
+    if (!this.poli) {
+      this.poli = { tipo: this.herr === 'area' ? 'area' : 'muro', puntos: [p] };
+      return;
+    }
+    const pts = this.poli.puntos;
+    const ultimo = pts[pts.length - 1];
+    if (dist(p, ultimo) < 1e-6) {
+      // Doble clic en el mismo punto: terminar
+      this.terminarPoli();
+      return;
+    }
+    const cierra = pts.length > 1 && dist(p, pts[0]) < 1e-6;
+    if (this.poli.tipo === 'muro') this.agregar(this.nuevoMuro(ultimo, p));
+    if (cierra) {
+      if (this.poli.tipo === 'area') this.terminarPoli();
+      else {
+        this.poli = null;
+        this.dibujar();
+      }
+      return;
+    }
+    pts.push(p);
+    this.dibujar();
+  }
+
+  /** Coloca el siguiente punto del muro a la distancia escrita. */
+  private aplicarMedida() {
+    const v = parseFloat(this.medida.replace(',', '.'));
+    this.medida = '';
+    if (!this.poli || !Number.isFinite(v) || v <= 0) return this.actualizarEstado();
+    const ult = this.poli.puntos[this.poli.puntos.length - 1];
+    const c = this.cursor ? this.ajustar(this.cursor, ult) : { x: ult.x + 1, y: ult.y };
+    const l = dist(ult, c) || 1;
+    const dx = c.x - ult.x || 1;
+    const dy = c.y - ult.y;
+    this.clicPoli({ x: ult.x + (dx / l) * v, y: ult.y + (dy / l) * v });
+    this.actualizarEstado();
+  }
+
+  // ───────────────────────── Cortar esquinas y partir muros ─────────────────────────
+
+  /** Muros que tienen un extremo en q. */
+  private murosEn(q: Pt): { el: Muro; extremo: 'a' | 'b' }[] {
+    const r: { el: Muro; extremo: 'a' | 'b' }[] = [];
+    for (const o of this.datos.elementos) {
+      if (o.tipo !== 'muro') continue;
+      if (dist(o.a, q) < 1e-6) r.push({ el: o, extremo: 'a' });
+      else if (dist(o.b, q) < 1e-6) r.push({ el: o, extremo: 'b' });
+    }
+    return r;
+  }
+
+  /** Esquina (unión de exactamente dos muros) más cercana al punto. */
+  private esquinaCerca(p: Pt): Pt | null {
+    let mejor: Pt | null = null;
+    let md = this.tol(14);
+    for (const o of this.datos.elementos) {
+      if (o.tipo !== 'muro') continue;
+      for (const q of [o.a, o.b]) {
+        const d = dist(p, q);
+        if (d < md && this.murosEn(q).length === 2) {
+          md = d;
+          mejor = q;
+        }
+      }
+    }
+    return mejor;
+  }
+
+  private cortarEsquina(p: Pt) {
+    const q = this.esquinaCerca(p);
+    if (!q) return this.aviso('Haz clic en una esquina donde se unen dos muros.');
+    const [u, v] = this.murosEn(q);
+    const largo = (m: { el: Muro; extremo: 'a' | 'b' }) => dist(m.el.a, m.el.b);
+    const d = Math.min(this.estilo.chaflan, largo(u) * 0.9, largo(v) * 0.9);
+    const recorte = (m: { el: Muro; extremo: 'a' | 'b' }): Pt => {
+      const otro = m.extremo === 'a' ? m.el.b : m.el.a;
+      const l = dist(q, otro) || 1;
+      return { x: q.x + ((otro.x - q.x) / l) * d, y: q.y + ((otro.y - q.y) / l) * d };
+    };
+    this.registrar();
+    const pu = recorte(u);
+    const pv = recorte(v);
+    // Orden de recorrido: el muro que termina en la esquina va antes que el que empieza en ella
+    const [antes, despues] = u.extremo === 'b' ? [u, v] : [v, u];
+    const pA = antes === u ? pu : pv;
+    const pD = despues === u ? pu : pv;
+    antes.el[antes.extremo] = pA;
+    despues.el[despues.extremo] = pD;
+    const nuevo: Muro = {
+      id: nuevoId(),
+      tipo: 'muro',
+      a: { ...pA },
+      b: { ...pD },
+      grosor: antes.el.grosor,
+      color: antes.el.color,
+      chaflan: { q: { ...q }, muros: [antes.el.id, despues.el.id] },
+    };
+    this.datos.elementos.push(nuevo);
+    this.insertarEnCuartos(antes.el.id, despues.el.id, [nuevo.id]);
+    this.notificar();
+    // Deja seleccionado el corte para ajustarlo arrastrando sus extremos o desde el panel
+    this.cambiarHerramienta('seleccionar');
+    this.seleccion = new Set([nuevo.id]);
+    this.actualizarPanel();
+    this.dibujar();
+  }
+
+  /** Vecino del corte en el extremo indicado y su extremo libre. */
+  private vecinoChaflan(m: Muro, extremo: 'a' | 'b'): { el: Muro; extremo: 'a' | 'b'; lejos: Pt } | null {
+    if (!m.chaflan) return null;
+    const id = m.chaflan.muros[extremo === 'a' ? 0 : 1];
+    const v = this.datos.elementos.find((e): e is Muro => e.id === id && e.tipo === 'muro');
+    if (!v) return null;
+    const p = m[extremo];
+    const ext: 'a' | 'b' = dist(v.a, p) <= dist(v.b, p) ? 'a' : 'b';
+    return { el: v, extremo: ext, lejos: ext === 'a' ? v.b : v.a };
+  }
+
+  /** Distancia actual del corte (desde la esquina original). */
+  private distanciaChaflan(m: Muro): number {
+    if (!m.chaflan) return 0;
+    return (dist(m.chaflan.q, m.a) + dist(m.chaflan.q, m.b)) / 2;
+  }
+
+  /** Vuelve a cortar la esquina a la distancia d, moviendo los muros vecinos. */
+  private aplicarChaflan(m: Muro, d: number) {
+    const q = m.chaflan?.q;
+    if (!q) return;
+    for (const ext of ['a', 'b'] as const) {
+      const v = this.vecinoChaflan(m, ext);
+      if (!v) continue;
+      const l = dist(q, v.lejos) || 1;
+      const dd = Math.max(0.05, Math.min(d, l * 0.95));
+      const p = { x: q.x + ((v.lejos.x - q.x) / l) * dd, y: q.y + ((v.lejos.y - q.y) / l) * dd };
+      v.el[v.extremo] = { ...p };
+      m[ext] = { ...p };
+    }
+  }
+
+  private dividirMuro(p: Pt) {
+    let mejor: { m: Muro; t: number } | null = null;
+    let md = this.tol(10);
+    for (const o of this.datos.elementos) {
+      if (o.tipo !== 'muro') continue;
+      const { pt, t } = proyectar(p, o.a, o.b);
+      const d = dist(p, pt) - o.grosor / 2;
+      if (d < md) {
+        md = d;
+        mejor = { m: o, t };
+      }
+    }
+    if (!mejor) return this.aviso('Haz clic sobre un muro.');
+    const { m } = mejor;
+    const l = dist(m.a, m.b);
+    let t = mejor.t;
+    if (this.iman && l > 0) t = Math.round((t * l) / PASO_REJILLA) * PASO_REJILLA / l;
+    if (t * l < 0.05 || (1 - t) * l < 0.05) return;
+    this.registrar();
+    const corte = { x: m.a.x + (m.b.x - m.a.x) * t, y: m.a.y + (m.b.y - m.a.y) * t };
+    const segundo: Muro = { ...m, id: nuevoId(), a: { ...corte }, b: { ...m.b } };
+    m.b = { ...corte };
+    this.datos.elementos.push(segundo);
+    this.insertarEnCuartos(m.id, null, [segundo.id]);
+    this.notificar();
+    // Deja seleccionado el muro para arrastrar la nueva esquina
+    this.cambiarHerramienta('seleccionar');
+    this.seleccion = new Set([m.id]);
+    this.actualizarPanel();
+    this.dibujar();
+  }
+
+  /** Inserta muros nuevos en la lista de los cuartos, justo después de `despuesDe`. */
+  private insertarEnCuartos(despuesDe: string, antesDe: string | null, ids: string[]) {
+    for (const el of this.datos.elementos) {
+      if (el.tipo !== 'area' || !el.muros) continue;
+      const i = el.muros.indexOf(despuesDe);
+      if (i < 0) continue;
+      if (antesDe && el.muros[(i + 1) % el.muros.length] !== antesDe) continue;
+      el.muros.splice(i + 1, 0, ...ids);
+    }
+  }
+
+  private aviso(txt: string) {
+    this.estado.innerHTML = `<b style="color:#dc2626">${txt}</b>`;
+  }
+
+  // ───────────────────────── Ratón y táctil ─────────────────────────
+
+  private elementoEn(p: Pt): Elemento | null {
+    const tol = this.tol(6);
+    // Primero los de encima (orden de dibujo invertido); las áreas al final
+    const prioridad = (e: Elemento) => (e.tipo === 'area' ? 0 : e.tipo === 'muro' ? 1 : 2);
+    const lista = this.datos.elementos.map((e, i) => ({ e, i })).sort((a, b) => prioridad(b.e) - prioridad(a.e) || b.i - a.i);
+    for (const { e } of lista) if (toca(e, p, tol)) return e;
+    return null;
+  }
+
+  /** Manijas del elemento seleccionado (en coordenadas del mundo). */
+  private manijas(): { cual: 'a' | 'b' | 'rot' | 'tam' | 'etq' | number; p: Pt }[] {
+    const sel = this.seleccionados();
+    const cuarto = this.cuartoSeleccionado();
+    if (sel.length !== 1 && !cuarto) return [];
+    const el = cuarto ?? sel[0];
+    if (tieneDosPuntos(el)) return [{ cual: 'a', p: el.a }, { cual: 'b', p: el.b }];
+    if (el.tipo === 'area') {
+      const etq = el.nombre || el.mostrarM2 ? [{ cual: 'etq' as const, p: posEtiqueta(el) }] : [];
+      const vertices = el.muros?.length ? this.esquinasCuarto(el) : el.puntos;
+      return [...vertices.map((p, i) => ({ cual: i, p })), ...etq];
+    }
+    if (el.tipo === 'mueble') {
+      return [
+        { cual: 'rot', p: aMundo({ x: 0, y: -el.alto / 2 - this.tol(22) }, el.p, el.ang) },
+        { cual: 'tam', p: aMundo({ x: el.ancho / 2, y: el.alto / 2 }, el.p, el.ang) },
+      ];
+    }
+    return [];
+  }
+
+  private escucharPunteros() {
+    const c = this.canvas;
+    c.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      if (this.poli) this.terminarPoli();
+    });
+    c.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const s = this.enPantalla(e);
+      if (e.ctrlKey || Math.abs(e.deltaY) >= Math.abs(e.deltaX)) this.zoom(Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)), s);
+      else {
+        this.vista.ox -= e.deltaX;
+        this.dibujar();
+      }
+    }, { passive: false });
+    c.addEventListener('dblclick', (e) => {
+      if (this.herr !== 'seleccionar') return;
+      const p = this.aMundo(this.enPantalla(e).x, this.enPantalla(e).y);
+      const el = this.elementoEn(p);
+      if (el && (el.tipo === 'texto' || el.tipo === 'area' || el.tipo === 'mueble' || el.tipo === 'acceso')) {
+        const campo = this.panel.querySelector<HTMLInputElement | HTMLTextAreaElement>('input[type=text],textarea');
+        campo?.focus();
+        campo?.select();
+      }
+    });
+    c.addEventListener('pointerdown', (e) => this.alPresionar(e));
+    c.addEventListener('pointermove', (e) => this.alMover(e));
+    c.addEventListener('pointerup', (e) => this.alSoltar(e));
+    c.addEventListener('pointercancel', (e) => {
+      this.punteros.delete(e.pointerId);
+      this.pellizco = null;
+      this.accion = null;
+      this.dibujar();
+    });
+    c.addEventListener('pointerleave', () => {
+      if (!this.accion) {
+        this.cursor = null;
+        this.dibujar();
+      }
+    });
+  }
+
+  private alPresionar(e: PointerEvent) {
+    const s = this.enPantalla(e);
+    this.punteros.set(e.pointerId, s);
+    this.canvas.setPointerCapture(e.pointerId);
+    (document.activeElement as HTMLElement | null)?.blur?.();
+    if (this.punteros.size === 2) {
+      // Pellizco con dos dedos: cancela lo que se estaba haciendo
+      const [a, b] = [...this.punteros.values()];
+      this.accion = null;
+      this.pellizco = { d: Math.hypot(a.x - b.x, a.y - b.y), c: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, ...this.vista };
+      return;
+    }
+    if (this.punteros.size > 2) return;
+    const p = this.aMundo(s.x, s.y);
+    this.shift = e.shiftKey;
+    if (e.button === 1 || this.espacio || this.herr === 'mano') {
+      this.accion = { k: 'pan', sx: s.x, sy: s.y, ox: this.vista.ox, oy: this.vista.oy };
+      this.canvas.style.cursor = 'grabbing';
+      return;
+    }
+    if (e.button !== 0) return;
+
+    switch (this.herr) {
+      case 'seleccionar': {
+        for (const m of this.manijas()) {
+          if (dist(p, m.p) <= this.tol(9)) {
+            const el = this.cuartoSeleccionado() ?? this.seleccionados()[0];
+            const vinculados: { el: Muro; extremo: 'a' | 'b' }[] = [];
+            if (el.tipo === 'area' && el.muros?.length && typeof m.cual === 'number') {
+              vinculados.push(...this.murosEn(m.p));
+            }
+            if (el.tipo === 'muro' && !el.chaflan && (m.cual === 'a' || m.cual === 'b')) {
+              const q = el[m.cual];
+              for (const o of this.datos.elementos) {
+                if (o.tipo !== 'muro' || o === el) continue;
+                if (dist(o.a, q) < 1e-6) vinculados.push({ el: o, extremo: 'a' });
+                if (dist(o.b, q) < 1e-6) vinculados.push({ el: o, extremo: 'b' });
+              }
+            }
+            this.accion = { k: 'manija', id: el.id, cual: m.cual, previo: this.instantanea(), vinculados };
+            return;
+          }
+        }
+        const el = this.elementoEn(p);
+        if (el) {
+          const grupo = this.grupoDe(el);
+          if (e.shiftKey) {
+            if (this.seleccion.has(el.id)) grupo.forEach((id) => this.seleccion.delete(id));
+            else grupo.forEach((id) => this.seleccion.add(id));
+          } else if (!this.seleccion.has(el.id)) {
+            this.seleccion = new Set(grupo);
+          }
+          this.actualizarPanel();
+          this.accion = { k: 'mover', ultimo: p, previo: this.instantanea(), movido: false };
+        } else {
+          if (!e.shiftKey) this.seleccion.clear();
+          this.actualizarPanel();
+          this.accion = { k: 'marco', a: p, b: p, sumar: e.shiftKey };
+        }
+        this.dibujar();
+        return;
+      }
+      case 'muro':
+        this.clicPoli(this.ajustar(p, this.poli?.puntos[this.poli.puntos.length - 1]));
+        return;
+      case 'area':
+        if (this.poli) this.clicPoli(this.ajustar(p, this.poli.puntos[this.poli.puntos.length - 1]));
+        else {
+          const a = this.ajustar(p);
+          this.accion = { k: 'areaRect', a, b: a };
+        }
+        return;
+      case 'cuarto': {
+        const a = this.ajustar(p);
+        this.accion = { k: 'cuarto', a, b: a };
+        return;
+      }
+      case 'chaflan':
+        this.cortarEsquina(p);
+        return;
+      case 'dividir':
+        this.dividirMuro(p);
+        return;
+      case 'puerta':
+      case 'puerta2':
+      case 'ventana': {
+        const ab = this.nuevaAbertura(this.herr, p);
+        this.agregar(ab);
+        return;
+      }
+      case 'mueble':
+        this.agregar(this.nuevoMueble(p));
+        return;
+      case 'texto': {
+        const t: Texto = { id: nuevoId(), tipo: 'texto', p: this.ajustar(p), texto: 'Etiqueta', tam: 0.3, color: this.estilo.color, negrita: false, ang: 0 };
+        this.agregar(t);
+        this.cambiarHerramienta('seleccionar');
+        this.seleccion = new Set([t.id]);
+        this.actualizarPanel();
+        this.dibujar();
+        const campo = this.panel.querySelector<HTMLTextAreaElement>('textarea');
+        campo?.focus();
+        campo?.select();
+        return;
+      }
+      case 'acceso':
+      case 'cota':
+      case 'linea': {
+        const a = this.ajustar(p);
+        const base = { id: nuevoId(), a, b: { ...a } };
+        const el: ConDosPuntos =
+          this.herr === 'acceso'
+            ? { ...base, tipo: 'acceso', color: this.estilo.acceso, texto: 'ACCESO' }
+            : this.herr === 'cota'
+              ? { ...base, tipo: 'cota', color: '#111827' }
+              : { ...base, tipo: 'linea', color: this.estilo.color, grosor: 0.03, discontinua: false };
+        this.accion = { k: 'nuevo', el, inicio: a };
+        return;
+      }
+      case 'lapiz':
+        this.accion = { k: 'trazo', el: { id: nuevoId(), tipo: 'trazo', puntos: [p], color: this.estilo.color, grosor: 0.03 } };
+        return;
+    }
+  }
+
+  private alMover(e: PointerEvent) {
+    const s = this.enPantalla(e);
+    if (this.punteros.has(e.pointerId)) this.punteros.set(e.pointerId, s);
+    if (this.pellizco && this.punteros.size === 2) {
+      const [a, b] = [...this.punteros.values()];
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      const c = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      const pz = this.pellizco;
+      const escala = clamp((pz.escala * d) / (pz.d || 1), MIN_ESCALA, MAX_ESCALA);
+      const k = escala / pz.escala;
+      this.vista = { escala, ox: c.x - (pz.c.x - pz.ox) * k, oy: c.y - (pz.c.y - pz.oy) * k };
+      this.actualizarEstado();
+      this.dibujar();
+      return;
+    }
+    const p = this.aMundo(s.x, s.y);
+    this.shift = e.shiftKey;
+    this.cursor = p;
+    const a = this.accion;
+    if (a) {
+      switch (a.k) {
+        case 'pan':
+          this.vista.ox = a.ox + s.x - a.sx;
+          this.vista.oy = a.oy + s.y - a.sy;
+          break;
+        case 'mover': {
+          let dx = p.x - a.ultimo.x;
+          let dy = p.y - a.ultimo.y;
+          if (!a.movido && Math.hypot(dx, dy) < this.tol(3)) break;
+          a.movido = true;
+          const sel = this.seleccionados();
+          if (sel.length === 1 && (sel[0].tipo === 'puerta' || sel[0].tipo === 'ventana')) {
+            const ab = sel[0];
+            const m = this.colocarEnMuro(p, ab.ancho);
+            if (m) {
+              ab.p = m.p;
+              ab.ang = m.ang;
+              ab.grosor = m.grosor;
+            } else ab.p = { x: p.x, y: p.y };
+            a.ultimo = p;
+            break;
+          }
+          if (this.iman) {
+            // Mueve en pasos de rejilla para conservar alineaciones
+            dx = Math.round(dx / PASO_REJILLA) * PASO_REJILLA;
+            dy = Math.round(dy / PASO_REJILLA) * PASO_REJILLA;
+          }
+          if (dx || dy) {
+            this.moverSeleccion(dx, dy);
+            this.sincronizarCuartos();
+            a.ultimo = { x: a.ultimo.x + dx, y: a.ultimo.y + dy };
+          }
+          break;
+        }
+        case 'manija':
+          this.arrastrarManija(a, p);
+          this.sincronizarCuartos();
+          break;
+        case 'marco':
+          a.b = p;
+          break;
+        case 'nuevo':
+          a.el.b = this.ajustar(p, a.inicio);
+          break;
+        case 'cuarto':
+        case 'areaRect':
+          a.b = this.ajustar(p);
+          break;
+        case 'trazo': {
+          const ult = a.el.puntos[a.el.puntos.length - 1];
+          if (dist(ult, p) > this.tol(1.5)) a.el.puntos.push(p);
+          break;
+        }
+      }
+    }
+    this.actualizarEstado();
+    this.dibujar();
+  }
+
+  private arrastrarManija(a: Extract<Accion, { k: 'manija' }>, p: Pt) {
+    const el = this.datos.elementos.find((x) => x.id === a.id);
+    if (!el) return;
+    const excluir = new Set([el.id, ...a.vinculados.map((v) => v.el.id)]);
+    if (el.tipo === 'muro' && el.chaflan && (a.cual === 'a' || a.cual === 'b')) {
+      const v = this.vecinoChaflan(el, a.cual);
+      if (!v) return;
+      const q = el.chaflan.q;
+      const l = dist(q, v.lejos) || 1;
+      let d = ((p.x - q.x) * (v.lejos.x - q.x) + (p.y - q.y) * (v.lejos.y - q.y)) / l;
+      if (this.iman) d = Math.round(d / PASO_REJILLA) * PASO_REJILLA;
+      this.aplicarChaflan(el, d);
+    } else if (tieneDosPuntos(el) && (a.cual === 'a' || a.cual === 'b')) {
+      const otro = a.cual === 'a' ? el.b : el.a;
+      const q = this.ajustar(p, otro, excluir);
+      el[a.cual] = q;
+      for (const v of a.vinculados) v.el[v.extremo] = { ...q };
+    } else if (el.tipo === 'area' && a.cual === 'etq') {
+      el.etqPos = this.iman ? { x: redondear(p.x), y: redondear(p.y) } : { ...p };
+    } else if (el.tipo === 'area' && typeof a.cual === 'number' && el.muros?.length) {
+      const q = this.ajustar(p, null, excluir);
+      for (const v of a.vinculados) v.el[v.extremo] = { ...q };
+    } else if (el.tipo === 'area' && typeof a.cual === 'number') {
+      el.puntos[a.cual] = this.ajustar(p, null, excluir);
+    } else if (el.tipo === 'mueble') {
+      if (a.cual === 'rot') {
+        let ang = Math.atan2(p.y - el.p.y, p.x - el.p.x) + Math.PI / 2;
+        if (!this.shift) ang = Math.round(ang / (Math.PI / 12)) * (Math.PI / 12);
+        el.ang = normalizarAng(ang);
+      } else if (a.cual === 'tam') {
+        const l = puntoLocal(el, p);
+        const r = (v: number) => (this.iman ? Math.max(PASO_REJILLA, Math.round(v / PASO_REJILLA) * PASO_REJILLA) : Math.max(0.05, v));
+        el.ancho = r(Math.abs(l.x) * 2);
+        el.alto = r(Math.abs(l.y) * 2);
+      }
+    }
+  }
+
+  private alSoltar(e: PointerEvent) {
+    this.punteros.delete(e.pointerId);
+    if (this.pellizco) {
+      if (this.punteros.size < 2) this.pellizco = null;
+      return;
+    }
+    const a = this.accion;
+    this.accion = null;
+    if (!a) return;
+    switch (a.k) {
+      case 'pan':
+        this.canvas.style.cursor = this.herr === 'mano' ? 'grab' : this.herr === 'seleccionar' ? 'default' : 'crosshair';
+        break;
+      case 'mover':
+        if (a.movido) {
+          this.registrar(a.previo);
+          this.notificar();
+          this.actualizarPanel();
+        }
+        break;
+      case 'manija':
+        this.registrar(a.previo);
+        this.notificar();
+        this.actualizarPanel();
+        break;
+      case 'marco': {
+        const x0 = Math.min(a.a.x, a.b.x);
+        const x1 = Math.max(a.a.x, a.b.x);
+        const y0 = Math.min(a.a.y, a.b.y);
+        const y1 = Math.max(a.a.y, a.b.y);
+        if (x1 - x0 > this.tol(3) || y1 - y0 > this.tol(3)) {
+          for (const el of this.datos.elementos) {
+            const c = cajaDe(el);
+            if (c.minx >= x0 && c.maxx <= x1 && c.miny >= y0 && c.maxy <= y1) this.seleccion.add(el.id);
+          }
+        }
+        this.actualizarPanel();
+        break;
+      }
+      case 'nuevo':
+        if (dist(a.el.a, a.el.b) > this.tol(5)) this.agregar(a.el);
+        break;
+      case 'cuarto':
+        if (dist(a.a, a.b) > this.tol(5) && Math.abs(a.a.x - a.b.x) > 0.01 && Math.abs(a.a.y - a.b.y) > 0.01) this.crearCuarto(rectangulo(a.a, a.b));
+        break;
+      case 'trazo':
+        this.agregar(a.el);
+        break;
+      case 'areaRect':
+        if (dist(a.a, a.b) > this.tol(6) && Math.abs(a.a.x - a.b.x) > 0.01 && Math.abs(a.a.y - a.b.y) > 0.01) {
+          const ar = this.nuevaArea(rectangulo(a.a, a.b));
+          this.agregar(ar);
+          this.cambiarHerramienta('seleccionar');
+          this.seleccion = new Set([ar.id]);
+          this.actualizarPanel();
+        } else {
+          this.poli = { tipo: 'area', puntos: [a.a] };
+        }
+        break;
+    }
+    this.dibujar();
+  }
+
+  // ───────────────────────── Teclado ─────────────────────────
+
+  private escucharTeclas() {
+    const abajo = (e: KeyboardEvent) => {
+      if (!this.raiz.isConnected) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+      this.shift = e.shiftKey;
+      const ctrl = e.ctrlKey || e.metaKey;
+      const k = e.key.toLowerCase();
+      if (ctrl && k === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) this.rehacer();
+        else this.deshacer();
+        return;
+      }
+      if (ctrl && k === 'y') {
+        e.preventDefault();
+        this.rehacer();
+        return;
+      }
+      if (ctrl && k === 'd') {
+        e.preventDefault();
+        this.duplicar();
+        return;
+      }
+      if (ctrl && k === 'a') {
+        e.preventDefault();
+        this.cambiarHerramienta('seleccionar');
+        this.seleccion = new Set(this.datos.elementos.map((x) => x.id));
+        this.actualizarPanel();
+        this.dibujar();
+        return;
+      }
+      if (ctrl) return;
+      if (e.key === ' ') {
+        this.espacio = true;
+        e.preventDefault();
+        return;
+      }
+      // Medida tecleada mientras se dibuja un muro
+      if (this.poli?.tipo === 'muro' && /^[0-9.,]$/.test(e.key)) {
+        this.medida += e.key;
+        this.actualizarEstado();
+        e.preventDefault();
+        return;
+      }
+      if (this.medida && e.key === 'Backspace') {
+        this.medida = this.medida.slice(0, -1);
+        this.actualizarEstado();
+        e.preventDefault();
+        return;
+      }
+      if (e.key === 'Enter') {
+        if (this.medida) this.aplicarMedida();
+        else this.terminarPoli();
+        e.preventDefault();
+        return;
+      }
+      if (e.key === 'Escape') {
+        if (this.poli || this.accion) {
+          this.accion = null;
+          this.terminarPoli();
+        } else if (this.seleccion.size) {
+          this.seleccion.clear();
+          this.actualizarPanel();
+          this.dibujar();
+        } else if (this.herr !== 'seleccionar') this.cambiarHerramienta('seleccionar');
+        e.preventDefault();
+        return;
+      }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && this.seleccion.size) {
+        e.preventDefault();
+        this.eliminarSeleccion();
+        return;
+      }
+      if (e.key.startsWith('Arrow') && this.seleccion.size) {
+        e.preventDefault();
+        const paso = e.shiftKey ? 0.5 : PASO_REJILLA;
+        const dx = e.key === 'ArrowLeft' ? -paso : e.key === 'ArrowRight' ? paso : 0;
+        const dy = e.key === 'ArrowUp' ? -paso : e.key === 'ArrowDown' ? paso : 0;
+        this.registrar();
+        this.moverSeleccion(dx, dy);
+        this.notificar();
+        return;
+      }
+      if (k === 'r') {
+        if (this.seleccion.size) this.girarSeleccion(Math.PI / 2);
+        else {
+          this.fantasmaAng = normalizarAng(this.fantasmaAng + Math.PI / 2);
+          this.dibujar();
+        }
+        return;
+      }
+      if (k === 'f' && (this.herr === 'puerta' || this.herr === 'puerta2' || this.herr === 'ventana')) {
+        this.aberturaInvertir = !this.aberturaInvertir;
+        this.dibujar();
+        return;
+      }
+      if (k === '+' || k === '=') return this.zoom(1.25);
+      if (k === '-') return this.zoom(1 / 1.25);
+      const herr = HERRAMIENTAS.find((x) => x.tecla.toLowerCase() === k);
+      if (herr) this.cambiarHerramienta(herr.h);
+    };
+    const arriba = (e: KeyboardEvent) => {
+      if (e.key === ' ') this.espacio = false;
+      this.shift = e.shiftKey;
+    };
+    window.addEventListener('keydown', abajo);
+    window.addEventListener('keyup', arriba);
+    return () => {
+      window.removeEventListener('keydown', abajo);
+      window.removeEventListener('keyup', arriba);
+    };
+  }
+
+  // ───────────────────────── Dibujo ─────────────────────────
+
+  dibujar() {
+    if (this.dibujoPedido) return;
+    this.dibujoPedido = true;
+    requestAnimationFrame(() => {
+      this.dibujoPedido = false;
+      this.dibujarAhora();
+    });
+  }
+
+  private vistaPrevia(): Elemento[] {
+    const extras: Elemento[] = [];
+    const a = this.accion;
+    if (a?.k === 'nuevo' || a?.k === 'trazo') extras.push(a.el);
+    if (a?.k === 'cuarto') {
+      const pts = rectangulo(a.a, a.b);
+      extras.push(...pts.map((q, i) => this.nuevoMuro(q, pts[(i + 1) % 4])));
+    }
+    if (a?.k === 'areaRect' && dist(a.a, a.b) > 0) extras.push(this.nuevaArea(rectangulo(a.a, a.b)));
+    if (this.poli && this.cursor) {
+      const ult = this.poli.puntos[this.poli.puntos.length - 1];
+      const c = this.ajustar(this.cursor, ult);
+      if (this.poli.tipo === 'muro') {
+        extras.push(this.nuevoMuro(ult, c));
+      } else {
+        extras.push(this.nuevaArea([...this.poli.puntos, c]));
+      }
+    }
+    if (!a && !this.poli && this.cursor) {
+      if (this.herr === 'mueble') extras.push(this.nuevoMueble(this.cursor));
+      if (this.herr === 'puerta' || this.herr === 'puerta2' || this.herr === 'ventana') extras.push(this.nuevaAbertura(this.herr, this.cursor));
+    }
+    return extras;
+  }
+
+  private dibujarAhora() {
+    const r = this.canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const ctx = this.ctx;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    dibujarEscena(ctx, this.datos, this.vista, {
+      ancho: r.width,
+      alto: r.height,
+      cuadricula: this.cuadricula,
+      seleccion: this.seleccion,
+      extras: this.vistaPrevia(),
+    });
+    const v = this.vista;
+    const aP = (p: Pt) => ({ x: p.x * v.escala + v.ox, y: p.y * v.escala + v.oy });
+
+    // Polilínea en curso
+    if (this.poli) {
+      ctx.fillStyle = '#2563eb';
+      for (const q of this.poli.puntos) {
+        const s = aP(q);
+        ctx.fillRect(s.x - 3, s.y - 3, 6, 6);
+      }
+      if (this.cursor && this.poli.tipo === 'muro') {
+        const ult = this.poli.puntos[this.poli.puntos.length - 1];
+        const c = this.ajustar(this.cursor, ult);
+        const s = aP(c);
+        const txt = this.medida ? `${this.medida} m` : formatoM(dist(ult, c));
+        etiquetaCursor(ctx, s, txt);
+      }
+    }
+    // Medida mientras se arrastra una cota/línea/acceso o un cuarto
+    const a = this.accion;
+    if (this.cursor && (a?.k === 'nuevo' || a?.k === 'cuarto')) {
+      const txt =
+        a.k === 'nuevo'
+          ? formatoM(dist(a.el.a, a.el.b))
+          : `${Math.abs(a.b.x - a.a.x).toFixed(2)} × ${Math.abs(a.b.y - a.a.y).toFixed(2)} m`;
+      etiquetaCursor(ctx, aP(this.cursor), txt);
+    }
+    // Distancia del corte mientras se arrastra
+    if (a?.k === 'manija' && this.cursor) {
+      const m = this.datos.elementos.find((e) => e.id === a.id);
+      if (m?.tipo === 'muro' && m.chaflan) {
+        etiquetaCursor(ctx, aP(this.cursor), `Corte: ${formatoM(this.distanciaChaflan(m))}`);
+      }
+    }
+    // Marco de selección
+    if (a?.k === 'marco') {
+      const p0 = aP(a.a);
+      const p1 = aP(a.b);
+      ctx.fillStyle = 'rgba(37,99,235,0.08)';
+      ctx.strokeStyle = '#2563eb';
+      ctx.lineWidth = 1;
+      ctx.fillRect(p0.x, p0.y, p1.x - p0.x, p1.y - p0.y);
+      ctx.strokeRect(p0.x + 0.5, p0.y + 0.5, p1.x - p0.x, p1.y - p0.y);
+    }
+    // Manijas
+    for (const m of this.manijas()) {
+      const s = aP(m.p);
+      ctx.beginPath();
+      if (m.cual === 'rot') ctx.arc(s.x, s.y, 6, 0, Math.PI * 2);
+      else ctx.rect(s.x - 5, s.y - 5, 10, 10);
+      ctx.fillStyle = '#fff';
+      ctx.fill();
+      ctx.strokeStyle = '#2563eb';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+    // Indicador de ajuste a esquina
+    if (this.cursor && this.herr === 'chaflan') {
+      const q = this.esquinaCerca(this.cursor);
+      if (q) {
+        const s = aP(q);
+        ctx.strokeStyle = '#dc2626';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, 9, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    } else if (this.cursor && this.herr !== 'seleccionar' && this.herr !== 'mano' && this.herr !== 'lapiz' && this.herr !== 'mueble' && this.herr !== 'dividir') {
+      const q = this.ajustar(this.cursor, this.poli?.puntos[this.poli.puntos.length - 1]);
+      const s = aP(q);
+      ctx.strokeStyle = '#2563eb';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, 4, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+
+  // ───────────────────────── Archivos y resultado ─────────────────────────
+
+  imagen(): ImagenCroquis {
+    return exportarPNG(this.datos, this.o.exportar);
+  }
+
+  private guardar() {
+    this.terminarPoli();
+    const img = this.imagen();
+    this.o.alGuardar?.({ datos: JSON.parse(JSON.stringify(this.datos)), ...img });
+  }
+
+  private cancelar() {
+    if (this.cambiado && !confirm('¿Cerrar sin guardar los cambios del croquis?')) return;
+    this.o.alCancelar?.();
+  }
+
+  private descargar(tipo: 'json' | 'png') {
+    const a = document.createElement('a');
+    const fecha = new Date().toISOString().slice(0, 10);
+    if (tipo === 'png') {
+      a.href = this.imagen().png;
+      a.download = `croquis-${fecha}.png`;
+    } else {
+      a.href = URL.createObjectURL(new Blob([JSON.stringify(this.datos)], { type: 'application/json' }));
+      a.download = `croquis-${fecha}.croquis.json`;
+    }
+    a.click();
+  }
+
+  private abrirArchivo() {
+    const i = document.createElement('input');
+    i.type = 'file';
+    i.accept = '.json,application/json';
+    i.addEventListener('change', async () => {
+      const f = i.files?.[0];
+      if (!f) return;
+      try {
+        const d = normalizarDatos(JSON.parse(await f.text()));
+        this.registrar();
+        this.datos.elementos = d.elementos;
+        this.datos.opciones = d.opciones;
+        this.seleccion.clear();
+        this.actualizarPanel();
+        this.notificar();
+        this.encuadrar();
+      } catch {
+        alert('El archivo no es un croquis válido.');
+      }
+    });
+    i.click();
+  }
+}
+
+/** Rótulo azul junto al cursor (medidas mientras se dibuja). */
+function etiquetaCursor(ctx: CanvasRenderingContext2D, s: { x: number; y: number }, txt: string) {
+  ctx.font = 'bold 12px system-ui, sans-serif';
+  const w = ctx.measureText(txt).width;
+  ctx.fillStyle = 'rgba(37,99,235,0.92)';
+  ctx.fillRect(s.x + 12, s.y + 10, w + 10, 20);
+  ctx.fillStyle = '#fff';
+  ctx.fillText(txt, s.x + 17, s.y + 24);
+}
+
+function clamp(v: number, a: number, b: number) {
+  return Math.max(a, Math.min(b, v));
+}
+
+function redondear(v: number) {
+  return Math.round(v / PASO_REJILLA) * PASO_REJILLA;
+}
+
+function normalizarAng(a: number) {
+  while (a > Math.PI) a -= 2 * Math.PI;
+  while (a <= -Math.PI) a += 2 * Math.PI;
+  return a;
+}

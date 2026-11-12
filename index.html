@@ -4,34 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Croquis</title>
-    <link rel="stylesheet" href="/src/style.css" />
+    <style>
+      html, body, #app { margin: 0; height: 100%; }
+    </style>
   </head>
   <body>
-    <header class="toolbar">
-      <strong class="logo">Croquis</strong>
-      <div class="group" id="tools">
-        <button data-tool="lapiz" class="active" title="Lápiz (P)">✏️ Lápiz</button>
-        <button data-tool="linea" title="Línea (L)">📏 Línea</button>
-        <button data-tool="rectangulo" title="Rectángulo (R)">▭ Rectángulo</button>
-        <button data-tool="circulo" title="Círculo (C)">◯ Círculo</button>
-        <button data-tool="texto" title="Texto (T)">🔤 Texto</button>
-        <button data-tool="borrador" title="Borrador (E)">🧽 Borrador</button>
-      </div>
-      <div class="group">
-        <label>Color <input type="color" id="color" value="#1f2937" /></label>
-        <label>Grosor <input type="range" id="grosor" min="1" max="20" value="3" /></label>
-        <label><input type="checkbox" id="cuadricula" checked /> Cuadrícula</label>
-      </div>
-      <div class="group">
-        <button id="deshacer" title="Deshacer (Ctrl+Z)">↶ Deshacer</button>
-        <button id="rehacer" title="Rehacer (Ctrl+Y)">↷ Rehacer</button>
-        <button id="limpiar">🗑 Limpiar</button>
-        <button id="exportar">⬇ PNG</button>
-      </div>
-    </header>
-    <main>
-      <canvas id="lienzo"></canvas>
-    </main>
+    <div id="app"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
