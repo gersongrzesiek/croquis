@@ -17,11 +17,11 @@ export const CSS = `
 .crq-raiz button.crq-peligro{color:#dc2626}
 .crq-raiz button.crq-activo{background:var(--crq-acento);border-color:var(--crq-acento);color:#fff}
 .crq-cuerpo{flex:1;display:flex;min-height:0}
-.crq-herr{display:flex;flex-direction:column;gap:4px;padding:6px;background:var(--crq-panel);border-right:1px solid var(--crq-borde);overflow-y:auto}
+.crq-herr{flex:none;display:flex;flex-direction:column;gap:4px;padding:6px;background:var(--crq-panel);border-right:1px solid var(--crq-borde);overflow-y:auto}
 .crq-herr button{width:40px;height:40px;padding:0;justify-content:center}
 .crq-lienzo{flex:1;position:relative;min-width:0;overflow:hidden}
 .crq-lienzo canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none;display:block}
-.crq-panel{width:250px;background:var(--crq-panel);border-left:1px solid var(--crq-borde);overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:10px}
+.crq-panel{flex:0 0 280px;width:280px;min-width:280px;background:var(--crq-panel);border-left:1px solid var(--crq-borde);overflow-y:auto;overflow-x:hidden;padding:10px;display:flex;flex-direction:column;gap:10px}
 .crq-panel h3{margin:0;font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--crq-sutil)}
 .crq-panel p{margin:0;color:var(--crq-sutil);font-size:13px}
 .crq-campo{display:flex;flex-direction:column;gap:3px;font-size:13px}
@@ -31,15 +31,14 @@ export const CSS = `
 .crq-campo input[type=color]{padding:1px;height:30px;width:52px}
 .crq-campo textarea{min-height:60px;resize:vertical}
 .crq-botones{display:flex;flex-wrap:wrap;gap:6px}
-.crq-catalogo{display:grid;grid-template-columns:1fr 1fr;gap:6px}
-.crq-catalogo button{flex-direction:column;height:auto;padding:6px 4px;font-size:12px;gap:2px}
-.crq-catalogo canvas{width:64px;height:44px}
+.crq-catalogo{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+.crq-raiz .crq-catalogo button{flex-direction:column;height:auto;min-width:0;padding:6px 4px;font-size:12px;line-height:1.2;gap:3px;white-space:normal;text-align:center;overflow-wrap:anywhere}
+.crq-catalogo canvas{width:64px;height:44px;flex:none}
 .crq-estado{display:flex;gap:12px;align-items:center;padding:4px 10px;font-size:12px;color:var(--crq-sutil);background:var(--crq-panel);border-top:1px solid var(--crq-borde);min-height:26px}
 .crq-estado b{color:var(--crq-texto)}
 .crq-colores{display:flex;flex-wrap:wrap;gap:4px}
 .crq-colores button{width:22px;height:22px;padding:0;border-radius:4px}
 .crq-zoom{min-width:52px;text-align:center;font-variant-numeric:tabular-nums;color:var(--crq-sutil);font-size:13px}
-@media (max-width:820px){.crq-panel{position:absolute;right:0;top:0;bottom:0;z-index:2;box-shadow:-4px 0 12px rgba(0,0,0,.15)}.crq-panel.crq-oculto{display:none}}
 `;
 
 let inyectado = false;
