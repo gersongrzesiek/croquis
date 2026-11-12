@@ -1,5 +1,5 @@
 const svg = (cuerpo: string) =>
-  `<svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${cuerpo}</svg>`;
+  `<svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${cuerpo}</svg>`;
 
 export const ICONOS: Record<string, string> = {
   seleccionar: svg('<path d="M5 3l10 6.5-4.5 1L8.5 15z" fill="currentColor" stroke="none"/>'),
@@ -8,7 +8,7 @@ export const ICONOS: Record<string, string> = {
   cuarto: svg('<rect x="3.5" y="3.5" width="13" height="13" stroke-width="3"/>'),
   puerta: svg('<path d="M3 17h3M15 17h2M5 17V5M5 5a12 12 0 0112 12" /><path d="M5 5a12 12 0 0112 12" stroke-dasharray="2 2"/>'),
   chaflan: svg('<path d="M3 17V9l6-6h8v14z" stroke-width="2.4"/><path d="M3 3l6 0M3 3v6" stroke-dasharray="1.5 1.5"/>'),
-  dividir: svg('<path d="M2 10h16" stroke-width="3"/><circle cx="10" cy="10" r="3" fill="#fff"/>'),
+  dividir: svg('<path d="M2 10h5M13 10h5" stroke-width="3"/><circle cx="10" cy="10" r="2.5"/>'),
   puerta2: svg('<path d="M2 10h2M16 10h2M4 10V3M16 10V3M4 3a7 7 0 017 7M16 3a7 7 0 00-6.5 7" /><path d="M4 10v7M16 10v7M4 17a7 7 0 007-7M16 17a7 7 0 01-6.5-7" stroke-dasharray="1.6 1.6"/>'),
   ventana: svg('<rect x="2.5" y="7" width="15" height="6"/><path d="M2.5 10h15"/>'),
   area: svg('<path d="M3 5l10-2 4 9-8 5-6-4z" fill="currentColor" fill-opacity=".25"/>'),
@@ -18,6 +18,8 @@ export const ICONOS: Record<string, string> = {
   cota: svg('<path d="M3 12h14M3 9v6M17 9v6M4.5 13.5l-3-3M18.5 13.5l-3-3"/>'),
   linea: svg('<path d="M4 16L16 4"/>'),
   lapiz: svg('<path d="M4 16l1-4 8.5-8.5 3 3L8 15z"/>'),
+  menos: svg('<path d="M5 10h10"/>'),
+  mas: svg('<path d="M5 10h10M10 5v10"/>'),
   deshacer: svg('<path d="M7 5L3 9l4 4"/><path d="M3 9h9a5 5 0 010 10H9"/>'),
   rehacer: svg('<path d="M13 5l4 4-4 4"/><path d="M17 9H8a5 5 0 000 10h3"/>'),
 };

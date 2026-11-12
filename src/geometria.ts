@@ -96,3 +96,46 @@ export function insetPoligono(pts: Pt[], d: number): Pt[] {
     return { x: x1 + t * (x2 - x1), y: y1 + t * (y2 - y1) };
   });
 }
+
+/** Lado de la recta a→b en que cae p (positivo a la izquierda, negativo a la derecha). */
+export function lado(p: Pt, a: Pt, b: Pt): number {
+  return (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
+}
+
+/**
+ * Recorta un polígono con la recta a→b y se queda con la parte del lado opuesto a `fuera`.
+ * Quita puntos repetidos y vértices alineados que deja el recorte.
+ */
+export function recortarPoligono(pts: Pt[], a: Pt, b: Pt, fuera: Pt): Pt[] {
+  const signo = lado(fuera, a, b) > 0 ? -1 : 1;
+  const l = dist(a, b) || 1;
+  const dentro = (p: Pt) => (signo * lado(p, a, b)) / l > -1e-6;
+  const res: Pt[] = [];
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i];
+    const q = pts[(i + 1) % pts.length];
+    const dp = dentro(p);
+    const dq = dentro(q);
+    if (dp) res.push({ ...p });
+    if (dp !== dq) {
+      const lp = lado(p, a, b);
+      const lq = lado(q, a, b);
+      const t = lp / (lp - lq);
+      res.push({ x: p.x + (q.x - p.x) * t, y: p.y + (q.y - p.y) * t });
+    }
+  }
+  // Limpieza: puntos casi iguales y vértices sobre una misma recta
+  const limpio = res.filter((p, i) => dist(p, res[(i + 1) % res.length]) > 1e-4);
+  return limpio.filter((p, i) => {
+    const prev = limpio[(i - 1 + limpio.length) % limpio.length];
+    const sig = limpio[(i + 1) % limpio.length];
+    return Math.abs(lado(p, prev, sig)) / (dist(prev, sig) || 1) > 1e-4;
+  });
+}
+
+/** Distancia de p al borde de un polígono. */
+export function distBorde(p: Pt, pts: Pt[]): number {
+  let m = Infinity;
+  for (let i = 0; i < pts.length; i++) m = Math.min(m, distSeg(p, pts[i], pts[(i + 1) % pts.length]));
+  return m;
+}

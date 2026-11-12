@@ -110,6 +110,44 @@ export function textoMundo(
   ctx.restore();
 }
 
+/**
+ * Parte el texto en líneas que quepan en `ancho` y, si aun así no cabe en `alto`, achica la letra.
+ * Medidas en metros; `tam` es el tamaño de letra de partida.
+ */
+export function ajustarTexto(ctx: CanvasRenderingContext2D, texto: string, ancho: number, alto: number, tam: number) {
+  const k = 100;
+  const medir = (t: string, tm: number) => {
+    ctx.font = `${tm * k}px Arial, sans-serif`;
+    return ctx.measureText(t).width / k;
+  };
+  const partir = (tm: number) => {
+    const lineas: string[] = [];
+    for (const parrafo of texto.split('\n')) {
+      let linea = '';
+      for (const palabra of parrafo.split(/\s+/).filter(Boolean)) {
+        const prueba = linea ? `${linea} ${palabra}` : palabra;
+        if (linea && medir(prueba, tm) > ancho) {
+          lineas.push(linea);
+          linea = palabra;
+        } else linea = prueba;
+      }
+      lineas.push(linea);
+    }
+    return lineas;
+  };
+  ctx.save();
+  let tm = tam;
+  let lineas = partir(tm);
+  const cabe = () => lineas.length * tm * 1.2 <= alto && lineas.every((l) => medir(l, tm) <= ancho);
+  // Achica en pasos del 10 % hasta que quepa, sin bajar de 4 cm de letra
+  while (!cabe() && tm > 0.04) {
+    tm = Math.max(0.04, tm * 0.9);
+    lineas = partir(tm);
+  }
+  ctx.restore();
+  return { lineas, tam: tm };
+}
+
 /** Ángulo legible (el texto nunca queda de cabeza). */
 function angLegible(a: Pt, b: Pt) {
   let ang = Math.atan2(b.y - a.y, b.x - a.x);
@@ -251,7 +289,17 @@ export function dibujarElemento(ctx: CanvasRenderingContext2D, el: Elemento, d: 
       dibujarSimbolo(ctx, el.clave, el.ancho, el.alto, el.color, 0.02);
       if (el.etiqueta) {
         ctx.rotate(-el.ang);
-        textoMundo(ctx, el.etiqueta, { x: 0, y: 0 }, Math.max(0.16, 9 / escala), '#111827', {
+        let texto = el.etiqueta;
+        let tam = Math.max(0.16, 9 / escala);
+        if (el.ajustarEtq) {
+          // Caja que ocupa el mueble ya girado (la etiqueta siempre va horizontal)
+          const c = Math.abs(Math.cos(el.ang));
+          const s = Math.abs(Math.sin(el.ang));
+          const r = ajustarTexto(ctx, el.etiqueta, (el.ancho * c + el.alto * s) * 0.92, (el.ancho * s + el.alto * c) * 0.92, tam);
+          texto = r.lineas.join('\n');
+          tam = r.tam;
+        }
+        textoMundo(ctx, texto, { x: 0, y: 0 }, tam, '#111827', {
           alinear: 'center',
           base: 'middle',
           halo: true,
@@ -342,47 +390,75 @@ export function dibujarElemento(ctx: CanvasRenderingContext2D, el: Elemento, d: 
 const clavePt = (p: Pt) => `${Math.round(p.x * 1e4)},${Math.round(p.y * 1e4)}`;
 
 /**
- * Dibuja los muros uniendo en inglete los que comparten esquina (mismo grosor y color),
- * para que las esquinas en diagonal queden limpias.
+ * Dibuja cada muro como un polígono. Donde los muros llegan a un punto en exactamente dos direcciones,
+ * el extremo se corta en inglete sobre la bisectriz, aunque varios muros compartan cada dirección
+ * (cuartos empalmados), para que las esquinas en diagonal queden limpias y sin picos.
  */
 function dibujarMuros(ctx: CanvasRenderingContext2D, muros: Muro[]) {
-  const grado = new Map<string, number>();
-  for (const m of muros) for (const p of [m.a, m.b]) grado.set(clavePt(p), (grado.get(clavePt(p)) ?? 0) + 1);
-  const usados = new Set<Muro>();
-  const estilo = (m: Muro) => `${m.color}|${m.grosor}`;
-  /** Busca un muro libre que continúe desde `p`; lo devuelve orientado. */
-  const siguiente = (p: Pt, est: string): [Pt, Pt, Muro] | null => {
-    if (grado.get(clavePt(p)) !== 2) return null;
-    for (const m of muros) {
-      if (usados.has(m) || estilo(m) !== est) continue;
-      if (clavePt(m.a) === clavePt(p)) return [m.a, m.b, m];
-      if (clavePt(m.b) === clavePt(p)) return [m.b, m.a, m];
-    }
-    return null;
+  type V = { x: number; y: number };
+  const unit = (x: number, y: number): V => {
+    const l = Math.hypot(x, y) || 1;
+    return { x: x / l, y: y / l };
   };
+  const cruz = (a: V, b: V) => a.x * b.y - a.y * b.x;
+  // Direcciones distintas que salen de cada punto
+  const nodos = new Map<string, V[]>();
+  const agregarDir = (p: Pt, d: V) => {
+    const k = clavePt(p);
+    const lista = nodos.get(k) ?? [];
+    if (!lista.some((o) => o.x * d.x + o.y * d.y > 0.9995)) lista.push(d);
+    nodos.set(k, lista);
+  };
+  for (const m of muros) {
+    if (dist(m.a, m.b) < 1e-9) continue;
+    agregarDir(m.a, unit(m.b.x - m.a.x, m.b.y - m.a.y));
+    agregarDir(m.b, unit(m.a.x - m.b.x, m.a.y - m.b.y));
+  }
+  /** Esquinas del extremo p de un muro que sale de p en dirección d con medio grosor g. */
+  const extremo = (p: Pt, d: V, g: number): [V, V] => {
+    const n = { x: -d.y, y: d.x };
+    const lados = [1, -1].map((s) => ({ x: p.x + n.x * g * s, y: p.y + n.y * g * s }));
+    const dirs = nodos.get(clavePt(p)) ?? [];
+    if (dirs.length === 2) {
+      const otra = dirs.find((o) => o.x * d.x + o.y * d.y < 0.9995)!;
+      if (otra.x * d.x + otra.y * d.y < -0.9995) return [lados[0], lados[1]]; // sigue recto: corte plano
+      const bis = unit(d.x + otra.x, d.y + otra.y);
+      // Ángulos muy cerrados darían picos largos: ahí se usa el remate cuadrado
+      if (Math.abs(cruz(d, bis)) > 0.2) {
+        return lados.map((q) => {
+          const t = cruz({ x: p.x - q.x, y: p.y - q.y }, bis) / cruz(d, bis);
+          return { x: q.x + d.x * t, y: q.y + d.y * t };
+        }) as [V, V];
+      }
+    }
+    // Extremo libre o unión de más de dos direcciones: remate cuadrado
+    return [
+      { x: lados[0].x - d.x * g, y: lados[0].y - d.y * g },
+      { x: lados[1].x - d.x * g, y: lados[1].y - d.y * g },
+    ];
+  };
+  const t = ctx.getTransform();
+  const pelo = 1 / (Math.hypot(t.a, t.b) || 1);
   ctx.save();
-  ctx.lineCap = 'square';
   ctx.lineJoin = 'miter';
-  ctx.miterLimit = 4;
-  for (const m0 of muros) {
-    if (usados.has(m0)) continue;
-    usados.add(m0);
-    const est = estilo(m0);
-    const cadena: Pt[] = [m0.a, m0.b];
-    for (let s = siguiente(cadena[cadena.length - 1], est); s; s = siguiente(cadena[cadena.length - 1], est)) {
-      usados.add(s[2]);
-      cadena.push(s[1]);
-    }
-    for (let s = siguiente(cadena[0], est); s; s = siguiente(cadena[0], est)) {
-      usados.add(s[2]);
-      cadena.unshift(s[1]);
-    }
-    const cerrada = cadena.length > 3 && clavePt(cadena[0]) === clavePt(cadena[cadena.length - 1]);
-    ctx.strokeStyle = m0.color;
-    ctx.lineWidth = m0.grosor;
+  for (const m of muros) {
+    if (dist(m.a, m.b) < 1e-9) continue;
+    const g = m.grosor / 2;
+    const u = unit(m.b.x - m.a.x, m.b.y - m.a.y);
+    const [a1, a2] = extremo(m.a, u, g);
+    const [b1, b2] = extremo(m.b, { x: -u.x, y: -u.y }, g);
     ctx.beginPath();
-    cadena.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
-    if (cerrada) ctx.closePath();
+    // En b los lados quedan invertidos (la normal apunta al otro lado)
+    ctx.moveTo(a1.x, a1.y);
+    ctx.lineTo(b2.x, b2.y);
+    ctx.lineTo(b1.x, b1.y);
+    ctx.lineTo(a2.x, a2.y);
+    ctx.closePath();
+    ctx.fillStyle = m.color;
+    ctx.fill();
+    // Un trazo finísimo del mismo color tapa la costura del suavizado entre muros vecinos
+    ctx.strokeStyle = m.color;
+    ctx.lineWidth = pelo;
     ctx.stroke();
   }
   ctx.restore();
@@ -394,9 +470,9 @@ function dibujarCuadricula(ctx: CanvasRenderingContext2D, v: Vista, ancho: numbe
   const x1 = (ancho - v.ox) / v.escala;
   const y1 = (alto - v.oy) / v.escala;
   const niveles: [number, string][] = [];
-  if (0.5 * v.escala >= 8) niveles.push([0.5, '#f1f3f5']);
-  if (v.escala >= 6) niveles.push([1, '#e3e6ea']);
-  niveles.push([5, '#cfd4da']);
+  if (0.5 * v.escala >= 8) niveles.push([0.5, '#f0f2f5']);
+  if (v.escala >= 6) niveles.push([1, '#e2e6ec']);
+  niveles.push([5, '#cbd2dc']);
   ctx.lineWidth = 1 / v.escala;
   for (const [paso, color] of niveles) {
     ctx.strokeStyle = color;
@@ -439,7 +515,7 @@ export function dibujarEscena(ctx: CanvasRenderingContext2D, d: DatosCroquis, v:
     dibujarElemento(ctx, el, d, v.escala, fondo);
   }
   if (o.seleccion?.size) {
-    ctx.strokeStyle = '#2563eb';
+    ctx.strokeStyle = '#1f5fbf';
     ctx.lineWidth = 1.5 / v.escala;
     ctx.setLineDash([5 / v.escala, 4 / v.escala]);
     for (const el of d.elementos) {
@@ -451,11 +527,11 @@ export function dibujarEscena(ctx: CanvasRenderingContext2D, d: DatosCroquis, v:
         ctx.lineTo(pts[1].x, pts[1].y);
         if (el.tipo === 'muro') {
           ctx.lineWidth = el.grosor + 4 / v.escala;
-          ctx.strokeStyle = 'rgba(37,99,235,0.35)';
+          ctx.strokeStyle = 'rgba(31,95,191,0.35)';
           ctx.setLineDash([]);
           ctx.lineCap = 'square';
           ctx.stroke();
-          ctx.strokeStyle = '#2563eb';
+          ctx.strokeStyle = '#1f5fbf';
           ctx.lineWidth = 1.5 / v.escala;
           ctx.setLineDash([5 / v.escala, 4 / v.escala]);
           ctx.lineCap = 'butt';
