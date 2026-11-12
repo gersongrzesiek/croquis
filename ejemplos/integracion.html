@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Ejemplo de integración</title>
+    <style>
+      body { font: 15px system-ui, sans-serif; max-width: 760px; margin: 32px auto; padding: 0 16px; }
+      img { max-width: 100%; border: 1px solid #ddd; margin-top: 12px; }
+      button { font: inherit; padding: 6px 14px; }
+    </style>
+  </head>
+  <body>
+    <h1>Acta de ejemplo</h1>
+    <p>Así se usa el editor desde otra aplicación. Compila primero con <code>npm run build:lib</code>.</p>
+    <button id="editar">Dibujar / editar croquis</button>
+    <button id="tema">Tema oscuro</button>
+    <div id="vista"></div>
+
+    <script src="../dist-lib/croquis.js"></script>
+    <script>
+      // En Actas Offline esto vendría guardado dentro del acta (IndexedDB).
+      let croquisDelActa = null;
+      let tema = 'claro';
+
+      document.getElementById('tema').onclick = (e) => {
+        tema = tema === 'claro' ? 'oscuro' : 'claro';
+        e.target.textContent = tema === 'claro' ? 'Tema oscuro' : 'Tema claro';
+      };
+
+      document.getElementById('editar').onclick = async () => {
+        const r = await Croquis.abrir({ datos: croquisDelActa, titulo: 'Croquis del establecimiento', tema });
+        if (!r) return; // canceló
+        croquisDelActa = r.datos; // guardar para poder reeditar
+        // r.png es un data URL listo para jsPDF: doc.addImage(r.png, 'PNG', x, y, ancho, ancho * r.alto / r.ancho)
+        document.getElementById('vista').innerHTML = `<img src="${r.png}" alt="Croquis">`;
+      };
+    </script>
+  </body>
+</html>

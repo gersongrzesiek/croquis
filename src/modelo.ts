@@ -1,0 +1,123 @@
+/** Todas las coordenadas y medidas del croquis están en metros. */
+export type Pt = { x: number; y: number };
+export type Patron = 'ninguno' | 'diagonal' | 'cruzado' | 'horizontal' | 'puntos';
+
+interface Base {
+  id: string;
+}
+export interface Muro extends Base {
+  tipo: 'muro';
+  a: Pt;
+  b: Pt;
+  grosor: number;
+  color: string;
+}
+export interface Abertura extends Base {
+  tipo: 'puerta' | 'ventana';
+  /** Centro de la abertura. */
+  p: Pt;
+  /** Ángulo del muro en radianes. */
+  ang: number;
+  ancho: number;
+  /** Grosor del muro donde está colocada. */
+  grosor: number;
+  /** Abre hacia el otro lado del muro. */
+  invertir: boolean;
+  /** Bisagra del otro lado. */
+  espejo: boolean;
+  color: string;
+}
+export interface Area extends Base {
+  tipo: 'area';
+  puntos: Pt[];
+  relleno: string;
+  opacidad: number;
+  patron: Patron;
+  borde: string;
+  nombre: string;
+  mostrarM2: boolean;
+}
+export interface Mueble extends Base {
+  tipo: 'mueble';
+  clave: string;
+  p: Pt;
+  ancho: number;
+  alto: number;
+  ang: number;
+  color: string;
+  etiqueta: string;
+}
+export interface Texto extends Base {
+  tipo: 'texto';
+  p: Pt;
+  texto: string;
+  tam: number;
+  color: string;
+  negrita: boolean;
+  ang: number;
+}
+export interface Acceso extends Base {
+  tipo: 'acceso';
+  a: Pt;
+  b: Pt;
+  color: string;
+  texto: string;
+}
+export interface Cota extends Base {
+  tipo: 'cota';
+  a: Pt;
+  b: Pt;
+  color: string;
+}
+export interface Linea extends Base {
+  tipo: 'linea';
+  a: Pt;
+  b: Pt;
+  color: string;
+  grosor: number;
+  discontinua: boolean;
+}
+export interface Trazo extends Base {
+  tipo: 'trazo';
+  puntos: Pt[];
+  color: string;
+  grosor: number;
+}
+
+export type Elemento = Muro | Abertura | Area | Mueble | Texto | Acceso | Cota | Linea | Trazo;
+export type ConDosPuntos = Muro | Acceso | Cota | Linea;
+
+export interface DatosCroquis {
+  version: 1;
+  elementos: Elemento[];
+  opciones: {
+    /** Muestra la longitud de cada muro. */
+    medidasMuros: boolean;
+  };
+}
+
+export function datosVacios(): DatosCroquis {
+  return { version: 1, elementos: [], opciones: { medidasMuros: true } };
+}
+
+/** Acepta datos guardados (o nada) y devuelve un croquis válido. */
+export function normalizarDatos(d: unknown): DatosCroquis {
+  const base = datosVacios();
+  if (!d || typeof d !== 'object') return base;
+  const o = d as Partial<DatosCroquis>;
+  return {
+    version: 1,
+    elementos: Array.isArray(o.elementos) ? o.elementos : [],
+    opciones: { ...base.opciones, ...(o.opciones ?? {}) },
+  };
+}
+
+let contador = 0;
+export function nuevoId(): string {
+  contador++;
+  return Date.now().toString(36) + contador.toString(36) + Math.random().toString(36).slice(2, 6);
+}
+
+export function tieneDosPuntos(el: Elemento): el is ConDosPuntos {
+  return el.tipo === 'muro' || el.tipo === 'acceso' || el.tipo === 'cota' || el.tipo === 'linea';
+}
