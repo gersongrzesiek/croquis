@@ -394,9 +394,9 @@ function dibujarCuadricula(ctx: CanvasRenderingContext2D, v: Vista, ancho: numbe
   const x1 = (ancho - v.ox) / v.escala;
   const y1 = (alto - v.oy) / v.escala;
   const niveles: [number, string][] = [];
-  if (0.5 * v.escala >= 8) niveles.push([0.5, '#f1f3f5']);
-  if (v.escala >= 6) niveles.push([1, '#e3e6ea']);
-  niveles.push([5, '#cfd4da']);
+  if (0.5 * v.escala >= 8) niveles.push([0.5, '#f0f2f5']);
+  if (v.escala >= 6) niveles.push([1, '#e2e6ec']);
+  niveles.push([5, '#cbd2dc']);
   ctx.lineWidth = 1 / v.escala;
   for (const [paso, color] of niveles) {
     ctx.strokeStyle = color;
@@ -439,7 +439,7 @@ export function dibujarEscena(ctx: CanvasRenderingContext2D, d: DatosCroquis, v:
     dibujarElemento(ctx, el, d, v.escala, fondo);
   }
   if (o.seleccion?.size) {
-    ctx.strokeStyle = '#2563eb';
+    ctx.strokeStyle = '#1f5fbf';
     ctx.lineWidth = 1.5 / v.escala;
     ctx.setLineDash([5 / v.escala, 4 / v.escala]);
     for (const el of d.elementos) {
@@ -451,11 +451,11 @@ export function dibujarEscena(ctx: CanvasRenderingContext2D, d: DatosCroquis, v:
         ctx.lineTo(pts[1].x, pts[1].y);
         if (el.tipo === 'muro') {
           ctx.lineWidth = el.grosor + 4 / v.escala;
-          ctx.strokeStyle = 'rgba(37,99,235,0.35)';
+          ctx.strokeStyle = 'rgba(31,95,191,0.35)';
           ctx.setLineDash([]);
           ctx.lineCap = 'square';
           ctx.stroke();
-          ctx.strokeStyle = '#2563eb';
+          ctx.strokeStyle = '#1f5fbf';
           ctx.lineWidth = 1.5 / v.escala;
           ctx.setLineDash([5 / v.escala, 4 / v.escala]);
           ctx.lineCap = 'butt';

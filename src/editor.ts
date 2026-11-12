@@ -62,7 +62,10 @@ const HERRAMIENTAS: { h: Herramienta; nombre: string; tecla: string; ayuda: stri
   { h: 'lapiz', nombre: 'Lápiz', tecla: 'P', ayuda: 'Dibujo a mano alzada.' },
 ];
 
-const COLORES = ['#111827', '#374151', '#6b7280', '#dc2626', '#ea580c', '#ca8a04', '#16a34a', '#0891b2', '#2563eb', '#7c3aed', '#db2777', '#92400e'];
+/** Tinta azul de plano: selección, manijas y guías sobre el lienzo. */
+const ACENTO_LIENZO = '#1f5fbf';
+
+const COLORES = ['#111827', '#374151', '#6b7280', '#dc2626', '#ea580c', '#ca8a04', '#16a34a', '#0891b2', ACENTO_LIENZO, '#7c3aed', '#db2777', '#92400e'];
 const RELLENOS = ['#bfdbfe', '#bbf7d0', '#fef08a', '#fecaca', '#fed7aa', '#e9d5ff', '#e5e7eb', '#a5f3fc'];
 const PATRONES: { v: Patron; n: string }[] = [
   { v: 'ninguno', n: 'Sin patrón' },
@@ -199,13 +202,13 @@ export class Editor {
   private construir() {
     const barra = h('div', { className: 'crq-barra' });
     barra.append(h('span', { className: 'crq-titulo', textContent: this.o.titulo ?? 'Croquis' }));
-    this.btnDeshacer = this.boton(ICONOS.deshacer, 'Deshacer (Ctrl+Z)', () => this.deshacer());
-    this.btnRehacer = this.boton(ICONOS.rehacer, 'Rehacer (Ctrl+Y)', () => this.rehacer());
+    this.btnDeshacer = this.boton(ICONOS.deshacer, 'Deshacer (Ctrl+Z)', () => this.deshacer(), 'crq-icono');
+    this.btnRehacer = this.boton(ICONOS.rehacer, 'Rehacer (Ctrl+Y)', () => this.rehacer(), 'crq-icono');
     barra.append(this.btnDeshacer, this.btnRehacer, h('span', { className: 'crq-sep' }));
     barra.append(
-      this.boton('−', 'Alejar', () => this.zoom(1 / 1.25)),
+      this.boton(ICONOS.menos, 'Alejar', () => this.zoom(1 / 1.25), 'crq-icono'),
       this.zoomTxt,
-      this.boton('+', 'Acercar', () => this.zoom(1.25)),
+      this.boton(ICONOS.mas, 'Acercar', () => this.zoom(1.25), 'crq-icono'),
       this.boton('Ajustar', 'Ver todo el croquis', () => this.encuadrar()),
       h('span', { className: 'crq-sep' }),
     );
@@ -213,9 +216,11 @@ export class Editor {
       const b = this.boton(txt, titulo, () => {
         set(!get());
         b.classList.toggle('crq-activo', get());
+        b.setAttribute('aria-pressed', String(get()));
         this.dibujar();
-      });
+      }, 'crq-alternar');
       b.classList.toggle('crq-activo', get());
+      b.setAttribute('aria-pressed', String(get()));
       return b;
     };
     barra.append(
@@ -229,7 +234,7 @@ export class Editor {
     barra.append(h('span', { className: 'crq-esp' }));
     if (this.o.modo === 'modal') {
       barra.append(
-        this.boton('Cancelar', 'Cerrar sin guardar', () => this.cancelar()),
+        this.boton('Cancelar', 'Cerrar sin guardar', () => this.cancelar(), 'crq-borde'),
         this.boton('Guardar croquis', 'Guardar y volver', () => this.guardar(), 'crq-primario'),
       );
     } else {
@@ -242,10 +247,10 @@ export class Editor {
             this.notificar();
             this.actualizarPanel();
           }
-        }),
-        this.boton('Abrir', 'Abrir un archivo .croquis.json', () => this.abrirArchivo()),
-        this.boton('Guardar', 'Descargar como .croquis.json', () => this.descargar('json')),
-        this.boton('PNG', 'Descargar imagen', () => this.descargar('png'), 'crq-primario'),
+        }, 'crq-borde'),
+        this.boton('Abrir', 'Abrir un archivo .croquis.json', () => this.abrirArchivo(), 'crq-borde'),
+        this.boton('Guardar', 'Descargar como .croquis.json', () => this.descargar('json'), 'crq-borde'),
+        this.boton('Descargar PNG', 'Descargar imagen', () => this.descargar('png'), 'crq-primario'),
       );
     }
 
@@ -254,7 +259,7 @@ export class Editor {
       const b = this.boton(ICONOS[t.h], `${t.nombre} (${t.tecla})`, () => this.cambiarHerramienta(t.h));
       this.botonesHerr.set(t.h, b);
       herr.append(b);
-      if (t.sep) herr.append(div('height:6px'));
+      if (t.sep) herr.append(h('div', { className: 'crq-hueco' }));
     }
     const lienzo = h('div', { className: 'crq-lienzo' }, [this.canvas]);
     const cuerpo = h('div', { className: 'crq-cuerpo' }, [herr, lienzo, this.panel]);
@@ -283,10 +288,10 @@ export class Editor {
 
   private actualizarEstado() {
     const info = HERRAMIENTAS.find((x) => x.h === this.herr)!;
-    const partes = [`<b>${info.nombre}</b> · ${info.ayuda}`];
-    if (this.medida) partes.push(`Largo: <b>${this.medida} m</b> (Enter)`);
-    if (this.cursor) partes.push(`<span style="margin-left:auto">x ${this.cursor.x.toFixed(2)} · y ${this.cursor.y.toFixed(2)} m</span>`);
-    this.estado.innerHTML = partes.join(' &nbsp; ');
+    const partes = [`<b>${info.nombre}</b>`];
+    if (this.medida) partes.push(`<span>Largo <b class="crq-cifra">${this.medida} m</b>, Enter para fijar</span>`);
+    if (this.cursor) partes.push(`<span class="crq-cifra" style="margin-left:auto">x ${this.cursor.x.toFixed(2)}  y ${this.cursor.y.toFixed(2)} m</span>`);
+    this.estado.innerHTML = partes.join('');
     this.zoomTxt.textContent = `${Math.round((this.vista.escala / ESCALA_INICIAL) * 100)}%`;
     this.btnDeshacer.disabled = !this.historial.length;
     this.btnRehacer.disabled = !this.rehechos.length;
@@ -1102,7 +1107,7 @@ export class Editor {
   }
 
   private aviso(txt: string) {
-    this.estado.innerHTML = `<b style="color:#dc2626">${txt}</b>`;
+    this.estado.innerHTML = `<span class="crq-aviso">${txt}</span>`;
   }
 
   // ───────────────────────── Ratón y táctil ─────────────────────────
@@ -1653,7 +1658,7 @@ export class Editor {
 
     // Polilínea en curso
     if (this.poli) {
-      ctx.fillStyle = '#2563eb';
+      ctx.fillStyle = ACENTO_LIENZO;
       for (const q of this.poli.puntos) {
         const s = aP(q);
         ctx.fillRect(s.x - 3, s.y - 3, 6, 6);
@@ -1686,8 +1691,8 @@ export class Editor {
     if (a?.k === 'marco') {
       const p0 = aP(a.a);
       const p1 = aP(a.b);
-      ctx.fillStyle = 'rgba(37,99,235,0.08)';
-      ctx.strokeStyle = '#2563eb';
+      ctx.fillStyle = 'rgba(31,95,191,0.08)';
+      ctx.strokeStyle = ACENTO_LIENZO;
       ctx.lineWidth = 1;
       ctx.fillRect(p0.x, p0.y, p1.x - p0.x, p1.y - p0.y);
       ctx.strokeRect(p0.x + 0.5, p0.y + 0.5, p1.x - p0.x, p1.y - p0.y);
@@ -1700,7 +1705,7 @@ export class Editor {
       else ctx.rect(s.x - 5, s.y - 5, 10, 10);
       ctx.fillStyle = '#fff';
       ctx.fill();
-      ctx.strokeStyle = '#2563eb';
+      ctx.strokeStyle = ACENTO_LIENZO;
       ctx.lineWidth = 2;
       ctx.stroke();
     }
@@ -1709,7 +1714,7 @@ export class Editor {
       const q = this.esquinaCerca(this.cursor);
       if (q) {
         const s = aP(q);
-        ctx.strokeStyle = '#dc2626';
+        ctx.strokeStyle = '#b8372e';
         ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.arc(s.x, s.y, 9, 0, Math.PI * 2);
@@ -1718,7 +1723,7 @@ export class Editor {
     } else if (this.cursor && this.herr !== 'seleccionar' && this.herr !== 'mano' && this.herr !== 'lapiz' && this.herr !== 'mueble' && this.herr !== 'dividir') {
       const q = this.ajustar(this.cursor, this.poli?.puntos[this.poli.puntos.length - 1]);
       const s = aP(q);
-      ctx.strokeStyle = '#2563eb';
+      ctx.strokeStyle = ACENTO_LIENZO;
       ctx.lineWidth = 1.5;
       ctx.beginPath();
       ctx.arc(s.x, s.y, 4, 0, Math.PI * 2);
