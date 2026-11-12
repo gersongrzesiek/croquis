@@ -118,7 +118,7 @@ function angLegible(a: Pt, b: Pt) {
   return ang;
 }
 
-function dibujarArea(ctx: CanvasRenderingContext2D, el: Area, escala: number) {
+function dibujarArea(ctx: CanvasRenderingContext2D, el: Area) {
   if (el.puntos.length < 2) return;
   ctx.beginPath();
   el.puntos.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
@@ -236,7 +236,7 @@ export function dibujarElemento(ctx: CanvasRenderingContext2D, el: Elemento, d: 
   ctx.lineJoin = 'round';
   switch (el.tipo) {
     case 'area':
-      dibujarArea(ctx, el, escala);
+      dibujarArea(ctx, el);
       break;
     case 'muro':
       // Los muros se dibujan unidos en dibujarMuros()

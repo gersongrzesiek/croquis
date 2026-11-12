@@ -12,6 +12,7 @@ import {
   type Abertura,
   type Area,
   type DatosCroquis,
+  type ConDosPuntos,
   type Elemento,
   type Mueble,
   type Muro,
@@ -41,21 +42,22 @@ export type Herramienta =
   | 'linea'
   | 'lapiz';
 
-const HERRAMIENTAS: { h: Herramienta; nombre: string; tecla: string; ayuda: string }[] = [
+/** `sep` deja un espacio después del botón para agrupar la barra. */
+const HERRAMIENTAS: { h: Herramienta; nombre: string; tecla: string; ayuda: string; sep?: true }[] = [
   { h: 'seleccionar', nombre: 'Seleccionar', tecla: 'V', ayuda: 'Clic para seleccionar, arrastra para mover. Arrastra en vacío para seleccionar varios. Supr borra.' },
-  { h: 'mano', nombre: 'Mover vista', tecla: 'H', ayuda: 'Arrastra para desplazar la vista. La rueda del ratón hace zoom.' },
+  { h: 'mano', nombre: 'Mover vista', tecla: 'H', ayuda: 'Arrastra para desplazar la vista. La rueda del ratón hace zoom.', sep: true },
   { h: 'muro', nombre: 'Muro', tecla: 'W', ayuda: 'Clic en cada esquina. Escribe una medida y Enter para fijar el largo. Doble clic o Esc para terminar.' },
   { h: 'cuarto', nombre: 'Cuarto', tecla: 'Q', ayuda: 'Arrastra para crear un cuarto con sus 4 muros. Luego escribe su etiqueta; aparece al centro y puedes moverla con su manija.' },
-  { h: 'chaflan', nombre: 'Cortar esquina', tecla: 'C', ayuda: 'Clic en una esquina para cortarla en diagonal (chaflán). La distancia del corte se ajusta en el panel.' },
-  { h: 'dividir', nombre: 'Agregar esquina', tecla: 'E', ayuda: 'Clic sobre un muro para partirlo en dos. Luego arrastra la nueva esquina para darle otra forma al cuarto.' },
+  { h: 'chaflan', nombre: 'Cortar esquina', tecla: 'C', ayuda: 'Clic en una esquina para cortarla en diagonal (chaflán). Luego ajusta la distancia arrastrando sus extremos o en el panel.' },
+  { h: 'dividir', nombre: 'Agregar esquina', tecla: 'E', ayuda: 'Clic sobre un muro para partirlo en dos. Luego arrastra la nueva esquina para darle otra forma al cuarto.', sep: true },
   { h: 'puerta', nombre: 'Puerta', tecla: 'D', ayuda: 'Clic sobre un muro para colocar una puerta. R la gira, F cambia el lado.' },
-  { h: 'puerta2', nombre: 'Puerta de doble abatimiento', tecla: 'B', ayuda: 'Puerta de vaivén (abre hacia ambos lados). Activa "Doble puerta" para dos hojas, como en quirófanos.' },
-  { h: 'ventana', nombre: 'Ventana', tecla: 'N', ayuda: 'Clic sobre un muro para colocar una ventana.' },
+  { h: 'puerta2', nombre: 'Puerta de doble abatimiento', tecla: 'B', ayuda: 'Puerta de vaivén (abre hacia ambos lados). Activa "Doble puerta" para dos puertas que se juntan al centro, como en quirófanos.' },
+  { h: 'ventana', nombre: 'Ventana', tecla: 'N', ayuda: 'Clic sobre un muro para colocar una ventana.', sep: true },
   { h: 'area', nombre: 'Área / sombreado', tecla: 'A', ayuda: 'Arrastra para un área rectangular, o haz clic en cada vértice y doble clic para cerrar.' },
   { h: 'mueble', nombre: 'Mobiliario', tecla: 'M', ayuda: 'Elige un mueble en el panel y haz clic para colocarlo. R lo gira 90°.' },
-  { h: 'texto', nombre: 'Etiqueta', tecla: 'T', ayuda: 'Clic donde quieras la etiqueta y escribe el texto en el panel.' },
+  { h: 'texto', nombre: 'Etiqueta', tecla: 'T', ayuda: 'Clic donde quieras la etiqueta y escribe el texto en el panel.', sep: true },
   { h: 'acceso', nombre: 'Acceso', tecla: 'X', ayuda: 'Arrastra desde afuera hacia la entrada para marcar un acceso.' },
-  { h: 'cota', nombre: 'Cota', tecla: 'K', ayuda: 'Arrastra entre dos puntos para acotar la distancia.' },
+  { h: 'cota', nombre: 'Cota', tecla: 'K', ayuda: 'Arrastra entre dos puntos para acotar la distancia.', sep: true },
   { h: 'linea', nombre: 'Línea', tecla: 'L', ayuda: 'Arrastra para trazar una línea. Shift fija ángulos de 45°.' },
   { h: 'lapiz', nombre: 'Lápiz', tecla: 'P', ayuda: 'Dibujo a mano alzada.' },
 ];
@@ -71,6 +73,8 @@ const PATRONES: { v: Patron; n: string }[] = [
 ];
 
 const PASO_REJILLA = 0.05;
+/** Píxeles por metro al 100 % de zoom. */
+const ESCALA_INICIAL = 60;
 const MIN_ESCALA = 5;
 const MAX_ESCALA = 600;
 
@@ -96,7 +100,8 @@ type Accion =
   | { k: 'mover'; ultimo: Pt; previo: string; movido: boolean }
   | { k: 'manija'; id: string; cual: 'a' | 'b' | 'rot' | 'tam' | 'etq' | number; previo: string; vinculados: { el: Muro; extremo: 'a' | 'b' }[] }
   | { k: 'marco'; a: Pt; b: Pt; sumar: boolean }
-  | { k: 'nuevo'; el: Elemento; inicio: Pt }
+  | { k: 'nuevo'; el: ConDosPuntos; inicio: Pt }
+  | { k: 'cuarto'; a: Pt; b: Pt }
   | { k: 'trazo'; el: Trazo }
   | { k: 'areaRect'; a: Pt; b: Pt };
 
@@ -106,6 +111,17 @@ const h = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLEle
   for (const c of hijos) e.append(c);
   return e;
 };
+
+function div(css: string, hijos: (Node | string)[] = []) {
+  const d = h('div', {}, hijos);
+  d.style.cssText = css;
+  return d;
+}
+
+/** Esquinas de un rectángulo dado por dos esquinas opuestas. */
+function rectangulo(a: Pt, b: Pt): Pt[] {
+  return [a, { x: b.x, y: a.y }, b, { x: a.x, y: b.y }];
+}
 
 export class Editor {
   readonly raiz: HTMLDivElement;
@@ -119,7 +135,7 @@ export class Editor {
   private btnRehacer!: HTMLButtonElement;
 
   datos: DatosCroquis;
-  private vista: Vista = { escala: 60, ox: 60, oy: 60 };
+  private vista: Vista = { escala: ESCALA_INICIAL, ox: 60, oy: 60 };
   private herr: Herramienta = 'muro';
   private seleccion = new Set<string>();
   private historial: string[] = [];
@@ -238,7 +254,7 @@ export class Editor {
       const b = this.boton(ICONOS[t.h], `${t.nombre} (${t.tecla})`, () => this.cambiarHerramienta(t.h));
       this.botonesHerr.set(t.h, b);
       herr.append(b);
-      if (t.h === 'mano' || t.h === 'dividir' || t.h === 'ventana' || t.h === 'texto' || t.h === 'cota') herr.append(h('div', { style: 'height:6px' } as never));
+      if (t.sep) herr.append(div('height:6px'));
     }
     const lienzo = h('div', { className: 'crq-lienzo' }, [this.canvas]);
     const cuerpo = h('div', { className: 'crq-cuerpo' }, [herr, lienzo, this.panel]);
@@ -271,7 +287,7 @@ export class Editor {
     if (this.medida) partes.push(`Largo: <b>${this.medida} m</b> (Enter)`);
     if (this.cursor) partes.push(`<span style="margin-left:auto">x ${this.cursor.x.toFixed(2)} · y ${this.cursor.y.toFixed(2)} m</span>`);
     this.estado.innerHTML = partes.join(' &nbsp; ');
-    this.zoomTxt.textContent = `${Math.round((this.vista.escala / 60) * 100)}%`;
+    this.zoomTxt.textContent = `${Math.round((this.vista.escala / ESCALA_INICIAL) * 100)}%`;
     this.btnDeshacer.disabled = !this.historial.length;
     this.btnRehacer.disabled = !this.rehechos.length;
   }
@@ -564,7 +580,7 @@ export class Editor {
       });
       muestras.append(b);
     }
-    const cont = h('div', { className: 'crq-campo' }, [h('span', { textContent: etq }), h('div', { style: 'display:flex;gap:6px;align-items:center' } as never, [i, muestras])]);
+    const cont = h('div', { className: 'crq-campo' }, [h('span', { textContent: etq }), div('display:flex;gap:6px;align-items:center', [i, muestras])]);
     return cont;
   }
 
@@ -708,7 +724,7 @@ export class Editor {
     const r = this.canvas.getBoundingClientRect();
     const c = cajaDeTodos(this.datos.elementos);
     if (!c || r.width < 10) {
-      this.vista = { escala: 60, ox: 60, oy: 60 };
+      this.vista = { escala: ESCALA_INICIAL, ox: 60, oy: 60 };
     } else {
       const w = Math.max(c.maxx - c.minx, 1);
       const hh = Math.max(c.maxy - c.miny, 1);
@@ -873,6 +889,28 @@ export class Editor {
       nombre: '',
       mostrarM2: true,
     };
+  }
+
+  /** Crea los muros de un cuarto con su piso ligado y deja lista la etiqueta para escribirla. */
+  private crearCuarto(pts: Pt[]) {
+    const muros = pts.map((q, i) => this.nuevoMuro(q, pts[(i + 1) % pts.length]));
+    const piso: Area = {
+      ...this.nuevaArea(pts),
+      relleno: this.estilo.fondoCuarto,
+      opacidad: 1,
+      patron: 'ninguno',
+      muros: muros.map((m) => m.id),
+      tamEtq: 0.3,
+    };
+    this.registrar();
+    // El piso va primero para que se dibuje debajo de todo
+    this.datos.elementos.unshift(piso);
+    this.datos.elementos.push(...muros);
+    this.notificar();
+    this.cambiarHerramienta('seleccionar');
+    this.seleccion = new Set(this.grupoDe(piso));
+    this.actualizarPanel();
+    this.panel.querySelector<HTMLInputElement>('input[type=text]')?.focus();
   }
 
   private nuevoMuro(a: Pt, b: Pt): Muro {
@@ -1215,7 +1253,7 @@ export class Editor {
         return;
       case 'cuarto': {
         const a = this.ajustar(p);
-        this.accion = { k: 'nuevo', inicio: a, el: { id: '', tipo: 'area', puntos: [], relleno: '#fff', opacidad: 0, patron: 'ninguno', borde: '#fff', nombre: '', mostrarM2: false } };
+        this.accion = { k: 'cuarto', a, b: a };
         return;
       }
       case 'chaflan':
@@ -1242,10 +1280,8 @@ export class Editor {
         this.actualizarPanel();
         this.dibujar();
         const campo = this.panel.querySelector<HTMLTextAreaElement>('textarea');
-        setTimeout(() => {
-          campo?.focus();
-          campo?.select();
-        }, 0);
+        campo?.focus();
+        campo?.select();
         return;
       }
       case 'acceso':
@@ -1253,7 +1289,7 @@ export class Editor {
       case 'linea': {
         const a = this.ajustar(p);
         const base = { id: nuevoId(), a, b: { ...a } };
-        const el: Elemento =
+        const el: ConDosPuntos =
           this.herr === 'acceso'
             ? { ...base, tipo: 'acceso', color: this.estilo.acceso, texto: 'ACCESO' }
             : this.herr === 'cota'
@@ -1329,20 +1365,18 @@ export class Editor {
         case 'marco':
           a.b = p;
           break;
-        case 'nuevo': {
-          const b = this.ajustar(p, a.inicio);
-          if (a.el.tipo === 'acceso' || a.el.tipo === 'cota' || a.el.tipo === 'linea') a.el.b = b;
-          else a.el = { ...a.el, puntos: [a.inicio, { x: b.x, y: a.inicio.y }, b, { x: a.inicio.x, y: b.y }] } as Area;
+        case 'nuevo':
+          a.el.b = this.ajustar(p, a.inicio);
           break;
-        }
+        case 'cuarto':
+        case 'areaRect':
+          a.b = this.ajustar(p);
+          break;
         case 'trazo': {
           const ult = a.el.puntos[a.el.puntos.length - 1];
           if (dist(ult, p) > this.tol(1.5)) a.el.puntos.push(p);
           break;
         }
-        case 'areaRect':
-          a.b = this.ajustar(p);
-          break;
       }
     }
     this.actualizarEstado();
@@ -1426,41 +1460,18 @@ export class Editor {
         this.actualizarPanel();
         break;
       }
-      case 'nuevo': {
-        if (a.el.tipo === 'area') {
-          const pts = a.el.puntos;
-          if (pts.length === 4 && dist(pts[0], pts[2]) > this.tol(5)) {
-            const muros = pts.map((q, i) => this.nuevoMuro(q, pts[(i + 1) % 4]));
-            const piso: Area = {
-              ...this.nuevaArea(pts),
-              relleno: this.estilo.fondoCuarto,
-              opacidad: 1,
-              patron: 'ninguno',
-              borde: '#475569',
-              muros: muros.map((m) => m.id),
-              tamEtq: 0.3,
-            };
-            // El piso va primero para que se dibuje debajo de todo
-            this.registrar();
-            this.datos.elementos.unshift(piso);
-            this.datos.elementos.push(...muros);
-            this.notificar();
-            this.cambiarHerramienta('seleccionar');
-            this.seleccion = new Set(this.grupoDe(piso));
-            this.actualizarPanel();
-            this.panel.querySelector<HTMLInputElement>('input[type=text]')?.focus();
-          }
-        } else if (tieneDosPuntos(a.el) && dist(a.el.a, a.el.b) > this.tol(5)) {
-          this.agregar(a.el);
-        }
+      case 'nuevo':
+        if (dist(a.el.a, a.el.b) > this.tol(5)) this.agregar(a.el);
         break;
-      }
+      case 'cuarto':
+        if (dist(a.a, a.b) > this.tol(5) && Math.abs(a.a.x - a.b.x) > 0.01 && Math.abs(a.a.y - a.b.y) > 0.01) this.crearCuarto(rectangulo(a.a, a.b));
+        break;
       case 'trazo':
         this.agregar(a.el);
         break;
       case 'areaRect':
         if (dist(a.a, a.b) > this.tol(6) && Math.abs(a.a.x - a.b.x) > 0.01 && Math.abs(a.a.y - a.b.y) > 0.01) {
-          const ar = this.nuevaArea([a.a, { x: a.b.x, y: a.a.y }, a.b, { x: a.a.x, y: a.b.y }]);
+          const ar = this.nuevaArea(rectangulo(a.a, a.b));
           this.agregar(ar);
           this.cambiarHerramienta('seleccionar');
           this.seleccion = new Set([ar.id]);
@@ -1603,14 +1614,12 @@ export class Editor {
   private vistaPrevia(): Elemento[] {
     const extras: Elemento[] = [];
     const a = this.accion;
-    if (a?.k === 'nuevo') {
-      if (a.el.tipo === 'area') {
-        const pts = a.el.puntos;
-        if (pts.length === 4) extras.push(...pts.map((q, i) => this.nuevoMuro(q, pts[(i + 1) % 4])));
-      } else extras.push(a.el);
+    if (a?.k === 'nuevo' || a?.k === 'trazo') extras.push(a.el);
+    if (a?.k === 'cuarto') {
+      const pts = rectangulo(a.a, a.b);
+      extras.push(...pts.map((q, i) => this.nuevoMuro(q, pts[(i + 1) % 4])));
     }
-    if (a?.k === 'trazo') extras.push(a.el);
-    if (a?.k === 'areaRect' && dist(a.a, a.b) > 0) extras.push(this.nuevaArea([a.a, { x: a.b.x, y: a.a.y }, a.b, { x: a.a.x, y: a.b.y }]));
+    if (a?.k === 'areaRect' && dist(a.a, a.b) > 0) extras.push(this.nuevaArea(rectangulo(a.a, a.b)));
     if (this.poli && this.cursor) {
       const ult = this.poli.puntos[this.poli.puntos.length - 1];
       const c = this.ajustar(this.cursor, ult);
@@ -1632,14 +1641,13 @@ export class Editor {
     const dpr = window.devicePixelRatio || 1;
     const ctx = this.ctx;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const extras = this.vistaPrevia();
-    if (extras.length) {
-      ctx.save();
-      dibujarEscena(ctx, this.datos, this.vista, { ancho: r.width, alto: r.height, cuadricula: this.cuadricula, seleccion: this.seleccion, extras });
-      ctx.restore();
-    } else {
-      dibujarEscena(ctx, this.datos, this.vista, { ancho: r.width, alto: r.height, cuadricula: this.cuadricula, seleccion: this.seleccion });
-    }
+    dibujarEscena(ctx, this.datos, this.vista, {
+      ancho: r.width,
+      alto: r.height,
+      cuadricula: this.cuadricula,
+      seleccion: this.seleccion,
+      extras: this.vistaPrevia(),
+    });
     const v = this.vista;
     const aP = (p: Pt) => ({ x: p.x * v.escala + v.ox, y: p.y * v.escala + v.oy });
 
@@ -1654,46 +1662,24 @@ export class Editor {
         const ult = this.poli.puntos[this.poli.puntos.length - 1];
         const c = this.ajustar(this.cursor, ult);
         const s = aP(c);
-        ctx.font = 'bold 12px system-ui, sans-serif';
         const txt = this.medida ? `${this.medida} m` : formatoM(dist(ult, c));
-        const w = ctx.measureText(txt).width;
-        ctx.fillStyle = 'rgba(37,99,235,0.92)';
-        ctx.fillRect(s.x + 12, s.y + 10, w + 10, 20);
-        ctx.fillStyle = '#fff';
-        ctx.fillText(txt, s.x + 17, s.y + 24);
+        etiquetaCursor(ctx, s, txt);
       }
     }
     // Medida mientras se arrastra una cota/línea/acceso o un cuarto
     const a = this.accion;
-    if (a?.k === 'nuevo' && this.cursor) {
-      let txt = '';
-      if (tieneDosPuntos(a.el)) txt = formatoM(dist(a.el.a, a.el.b));
-      else if (a.el.tipo === 'area' && a.el.puntos.length === 4) {
-        const [p0, , p2] = a.el.puntos;
-        txt = `${Math.abs(p2.x - p0.x).toFixed(2)} × ${Math.abs(p2.y - p0.y).toFixed(2)} m`;
-      }
-      if (txt) {
-        const s = aP(this.cursor);
-        ctx.font = 'bold 12px system-ui, sans-serif';
-        const w = ctx.measureText(txt).width;
-        ctx.fillStyle = 'rgba(37,99,235,0.92)';
-        ctx.fillRect(s.x + 12, s.y + 10, w + 10, 20);
-        ctx.fillStyle = '#fff';
-        ctx.fillText(txt, s.x + 17, s.y + 24);
-      }
+    if (this.cursor && (a?.k === 'nuevo' || a?.k === 'cuarto')) {
+      const txt =
+        a.k === 'nuevo'
+          ? formatoM(dist(a.el.a, a.el.b))
+          : `${Math.abs(a.b.x - a.a.x).toFixed(2)} × ${Math.abs(a.b.y - a.a.y).toFixed(2)} m`;
+      etiquetaCursor(ctx, aP(this.cursor), txt);
     }
     // Distancia del corte mientras se arrastra
     if (a?.k === 'manija' && this.cursor) {
       const m = this.datos.elementos.find((e) => e.id === a.id);
       if (m?.tipo === 'muro' && m.chaflan) {
-        const s = aP(this.cursor);
-        const txt = `Corte: ${formatoM(this.distanciaChaflan(m))}`;
-        ctx.font = 'bold 12px system-ui, sans-serif';
-        const w = ctx.measureText(txt).width;
-        ctx.fillStyle = 'rgba(37,99,235,0.92)';
-        ctx.fillRect(s.x + 12, s.y + 10, w + 10, 20);
-        ctx.fillStyle = '#fff';
-        ctx.fillText(txt, s.x + 17, s.y + 24);
+        etiquetaCursor(ctx, aP(this.cursor), `Corte: ${formatoM(this.distanciaChaflan(m))}`);
       }
     }
     // Marco de selección
@@ -1792,6 +1778,16 @@ export class Editor {
     });
     i.click();
   }
+}
+
+/** Rótulo azul junto al cursor (medidas mientras se dibuja). */
+function etiquetaCursor(ctx: CanvasRenderingContext2D, s: { x: number; y: number }, txt: string) {
+  ctx.font = 'bold 12px system-ui, sans-serif';
+  const w = ctx.measureText(txt).width;
+  ctx.fillStyle = 'rgba(37,99,235,0.92)';
+  ctx.fillRect(s.x + 12, s.y + 10, w + 10, 20);
+  ctx.fillStyle = '#fff';
+  ctx.fillText(txt, s.x + 17, s.y + 24);
 }
 
 function clamp(v: number, a: number, b: number) {
