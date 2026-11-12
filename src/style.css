@@ -1,0 +1,12 @@
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; font-family: system-ui, sans-serif; background: #f3f4f6; color: #111827; }
+body { display: flex; flex-direction: column; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 8px 12px; background: #fff; border-bottom: 1px solid #e5e7eb; }
+.logo { font-size: 18px; margin-right: 8px; }
+.group { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+button { border: 1px solid #d1d5db; background: #fff; border-radius: 6px; padding: 6px 10px; cursor: pointer; font-size: 14px; }
+button:hover { background: #f9fafb; }
+button.active { background: #2563eb; color: #fff; border-color: #2563eb; }
+label { font-size: 14px; display: flex; gap: 4px; align-items: center; }
+main { flex: 1; position: relative; min-height: 0; }
+canvas { position: absolute; inset: 0; width: 100%; height: 100%; background: #fff; touch-action: none; cursor: crosshair; }
