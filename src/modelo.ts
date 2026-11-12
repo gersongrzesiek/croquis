@@ -60,6 +60,8 @@ export interface Mueble extends Base {
   ang: number;
   color: string;
   etiqueta: string;
+  /** Acomoda la etiqueta en varias líneas y achica la letra para que quepa dentro del mueble. */
+  ajustarEtq?: boolean;
 }
 export interface Texto extends Base {
   tipo: 'texto';

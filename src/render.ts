@@ -110,6 +110,44 @@ export function textoMundo(
   ctx.restore();
 }
 
+/**
+ * Parte el texto en líneas que quepan en `ancho` y, si aun así no cabe en `alto`, achica la letra.
+ * Medidas en metros; `tam` es el tamaño de letra de partida.
+ */
+export function ajustarTexto(ctx: CanvasRenderingContext2D, texto: string, ancho: number, alto: number, tam: number) {
+  const k = 100;
+  const medir = (t: string, tm: number) => {
+    ctx.font = `${tm * k}px Arial, sans-serif`;
+    return ctx.measureText(t).width / k;
+  };
+  const partir = (tm: number) => {
+    const lineas: string[] = [];
+    for (const parrafo of texto.split('\n')) {
+      let linea = '';
+      for (const palabra of parrafo.split(/\s+/).filter(Boolean)) {
+        const prueba = linea ? `${linea} ${palabra}` : palabra;
+        if (linea && medir(prueba, tm) > ancho) {
+          lineas.push(linea);
+          linea = palabra;
+        } else linea = prueba;
+      }
+      lineas.push(linea);
+    }
+    return lineas;
+  };
+  ctx.save();
+  let tm = tam;
+  let lineas = partir(tm);
+  const cabe = () => lineas.length * tm * 1.2 <= alto && lineas.every((l) => medir(l, tm) <= ancho);
+  // Achica en pasos del 10 % hasta que quepa, sin bajar de 4 cm de letra
+  while (!cabe() && tm > 0.04) {
+    tm = Math.max(0.04, tm * 0.9);
+    lineas = partir(tm);
+  }
+  ctx.restore();
+  return { lineas, tam: tm };
+}
+
 /** Ángulo legible (el texto nunca queda de cabeza). */
 function angLegible(a: Pt, b: Pt) {
   let ang = Math.atan2(b.y - a.y, b.x - a.x);
@@ -251,7 +289,17 @@ export function dibujarElemento(ctx: CanvasRenderingContext2D, el: Elemento, d: 
       dibujarSimbolo(ctx, el.clave, el.ancho, el.alto, el.color, 0.02);
       if (el.etiqueta) {
         ctx.rotate(-el.ang);
-        textoMundo(ctx, el.etiqueta, { x: 0, y: 0 }, Math.max(0.16, 9 / escala), '#111827', {
+        let texto = el.etiqueta;
+        let tam = Math.max(0.16, 9 / escala);
+        if (el.ajustarEtq) {
+          // Caja que ocupa el mueble ya girado (la etiqueta siempre va horizontal)
+          const c = Math.abs(Math.cos(el.ang));
+          const s = Math.abs(Math.sin(el.ang));
+          const r = ajustarTexto(ctx, el.etiqueta, (el.ancho * c + el.alto * s) * 0.92, (el.ancho * s + el.alto * c) * 0.92, tam);
+          texto = r.lineas.join('\n');
+          tam = r.tam;
+        }
+        textoMundo(ctx, texto, { x: 0, y: 0 }, tam, '#111827', {
           alinear: 'center',
           base: 'middle',
           halo: true,
