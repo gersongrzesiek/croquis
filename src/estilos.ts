@@ -54,6 +54,13 @@ export const CSS = `
 .crq-raiz .crq-herr button:hover{color:var(--crq-texto)}
 .crq-raiz .crq-herr button.crq-activo{background:var(--crq-activo);color:var(--crq-acento-tinta);box-shadow:inset 0 0 0 1px var(--crq-borde)}
 
+.crq-tip{position:fixed;z-index:2147483001;transform:translate(-4px,-50%);opacity:0;pointer-events:none;
+  display:flex;align-items:center;gap:8px;height:28px;padding:0 6px 0 10px;border-radius:8px;
+  background:var(--crq-texto);color:var(--crq-panel);font-size:13px;white-space:nowrap;
+  box-shadow:0 2px 8px rgba(0,0,0,.16);transition:opacity .1s var(--crq-curva),transform .1s var(--crq-curva)}
+.crq-tip.crq-visible{opacity:1;transform:translate(0,-50%);transition-delay:.15s}
+.crq-tip kbd{font:500 11px/1 var(--crq-mono);min-width:18px;height:18px;padding:0 4px;display:inline-flex;align-items:center;justify-content:center;
+  border-radius:4px;background:color-mix(in srgb,var(--crq-panel) 18%,transparent);color:var(--crq-panel)}
 .crq-lienzo{flex:1;position:relative;min-width:0;overflow:hidden}
 .crq-lienzo canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none;display:block}
 

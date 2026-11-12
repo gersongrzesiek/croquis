@@ -255,15 +255,32 @@ export class Editor {
     }
 
     const herr = h('div', { className: 'crq-herr' });
+    // Etiqueta flotante con el nombre de la herramienta; va fuera de la barra para que su scroll no la recorte.
+    const tip = h('div', { className: 'crq-tip', role: 'tooltip' });
+    const ocultarTip = () => tip.classList.remove('crq-visible');
+    herr.addEventListener('scroll', ocultarTip);
     for (const t of HERRAMIENTAS) {
-      const b = this.boton(ICONOS[t.h], `${t.nombre} (${t.tecla})`, () => this.cambiarHerramienta(t.h));
+      const b = this.boton(ICONOS[t.h], '', () => this.cambiarHerramienta(t.h));
+      b.removeAttribute('title');
+      b.setAttribute('aria-label', `${t.nombre} (${t.tecla})`);
+      const mostrar = () => {
+        tip.replaceChildren(t.nombre, h('kbd', { textContent: t.tecla }));
+        const r = b.getBoundingClientRect();
+        tip.style.left = `${r.right + 8}px`;
+        tip.style.top = `${r.top + r.height / 2}px`;
+        tip.classList.add('crq-visible');
+      };
+      b.addEventListener('pointerenter', (e) => e.pointerType === 'mouse' && mostrar());
+      b.addEventListener('pointerleave', ocultarTip);
+      b.addEventListener('focus', () => b.matches(':focus-visible') && mostrar());
+      b.addEventListener('blur', ocultarTip);
       this.botonesHerr.set(t.h, b);
       herr.append(b);
       if (t.sep) herr.append(h('div', { className: 'crq-hueco' }));
     }
     const lienzo = h('div', { className: 'crq-lienzo' }, [this.canvas]);
     const cuerpo = h('div', { className: 'crq-cuerpo' }, [herr, lienzo, this.panel]);
-    this.raiz.append(barra, cuerpo, this.estado);
+    this.raiz.append(barra, cuerpo, this.estado, tip);
   }
 
   private boton(contenido: string, titulo: string, fn: () => void, clase = '') {
