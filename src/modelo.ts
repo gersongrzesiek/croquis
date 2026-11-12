@@ -11,6 +11,8 @@ export interface Muro extends Base {
   b: Pt;
   grosor: number;
   color: string;
+  /** Si el muro es el corte diagonal de una esquina: la esquina original y los muros vecinos (en a y en b). */
+  chaflan?: { q: Pt; muros: [string, string] };
 }
 export interface Abertura extends Base {
   tipo: 'puerta' | 'ventana';

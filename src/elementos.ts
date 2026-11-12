@@ -126,6 +126,10 @@ export function mover(el: Elemento, dx: number, dy: number) {
   };
   switch (el.tipo) {
     case 'muro':
+      m(el.a);
+      m(el.b);
+      if (el.chaflan) m(el.chaflan.q);
+      break;
     case 'linea':
     case 'cota':
     case 'acceso':

@@ -390,7 +390,7 @@ export class Editor {
   private panelPropiedades(el: Elemento) {
     const p = this.panel;
     const nombres: Record<Elemento['tipo'], string> = {
-      muro: 'Muro',
+      muro: (el as Muro).chaflan ? 'Corte de esquina' : 'Muro',
       puerta: 'Puerta',
       ventana: 'Ventana',
       area: (el as Area).muros?.length ? 'Cuarto' : 'Área',
@@ -404,6 +404,13 @@ export class Editor {
     p.append(h('h3', { textContent: nombres[el.tipo] }));
     switch (el.tipo) {
       case 'muro':
+        if (el.chaflan) {
+          p.append(h('p', { textContent: 'Corte de esquina. Arrastra sus extremos sobre los muros o cambia la distancia.' }));
+          p.append(this.campoNum('Distancia del corte (m)', +this.distanciaChaflan(el).toFixed(2), 0.05, 50, 0.05, (v) => this.aplicarChaflan(el, v)));
+          p.append(this.campoNum('Grosor (m)', el.grosor, 0.05, 0.6, 0.01, (v) => (el.grosor = v)));
+          p.append(this.campoColor('Color', el.color, (c) => (el.color = c)));
+          break;
+        }
         p.append(this.campoNum('Largo (m)', +dist(el.a, el.b).toFixed(2), 0.05, 200, 0.05, (v) => {
           const l = dist(el.a, el.b) || 1;
           el.b = { x: el.a.x + ((el.b.x - el.a.x) / l) * v, y: el.a.y + ((el.b.y - el.a.y) / l) * v };
@@ -641,6 +648,11 @@ export class Editor {
       return c;
     });
     for (const c of copias) {
+      if (c.tipo === 'muro' && c.chaflan) {
+        const [x, y] = c.chaflan.muros.map((m) => ids.get(m));
+        if (x && y) c.chaflan.muros = [x, y];
+        else delete c.chaflan;
+      }
       if (c.tipo === 'area' && c.muros) {
         const nuevos = c.muros.map((m) => ids.get(m));
         if (nuevos.every(Boolean)) c.muros = nuevos as string[];
@@ -957,10 +969,55 @@ export class Editor {
     const pD = despues === u ? pu : pv;
     antes.el[antes.extremo] = pA;
     despues.el[despues.extremo] = pD;
-    const nuevo: Muro = { id: nuevoId(), tipo: 'muro', a: { ...pA }, b: { ...pD }, grosor: antes.el.grosor, color: antes.el.color };
+    const nuevo: Muro = {
+      id: nuevoId(),
+      tipo: 'muro',
+      a: { ...pA },
+      b: { ...pD },
+      grosor: antes.el.grosor,
+      color: antes.el.color,
+      chaflan: { q: { ...q }, muros: [antes.el.id, despues.el.id] },
+    };
     this.datos.elementos.push(nuevo);
     this.insertarEnCuartos(antes.el.id, despues.el.id, [nuevo.id]);
     this.notificar();
+    // Deja seleccionado el corte para ajustarlo arrastrando sus extremos o desde el panel
+    this.cambiarHerramienta('seleccionar');
+    this.seleccion = new Set([nuevo.id]);
+    this.actualizarPanel();
+    this.dibujar();
+  }
+
+  /** Vecino del corte en el extremo indicado y su extremo libre. */
+  private vecinoChaflan(m: Muro, extremo: 'a' | 'b'): { el: Muro; extremo: 'a' | 'b'; lejos: Pt } | null {
+    if (!m.chaflan) return null;
+    const id = m.chaflan.muros[extremo === 'a' ? 0 : 1];
+    const v = this.datos.elementos.find((e): e is Muro => e.id === id && e.tipo === 'muro');
+    if (!v) return null;
+    const p = m[extremo];
+    const ext: 'a' | 'b' = dist(v.a, p) <= dist(v.b, p) ? 'a' : 'b';
+    return { el: v, extremo: ext, lejos: ext === 'a' ? v.b : v.a };
+  }
+
+  /** Distancia actual del corte (desde la esquina original). */
+  private distanciaChaflan(m: Muro): number {
+    if (!m.chaflan) return 0;
+    return (dist(m.chaflan.q, m.a) + dist(m.chaflan.q, m.b)) / 2;
+  }
+
+  /** Vuelve a cortar la esquina a la distancia d, moviendo los muros vecinos. */
+  private aplicarChaflan(m: Muro, d: number) {
+    const q = m.chaflan?.q;
+    if (!q) return;
+    for (const ext of ['a', 'b'] as const) {
+      const v = this.vecinoChaflan(m, ext);
+      if (!v) continue;
+      const l = dist(q, v.lejos) || 1;
+      const dd = Math.max(0.05, Math.min(d, l * 0.95));
+      const p = { x: q.x + ((v.lejos.x - q.x) / l) * dd, y: q.y + ((v.lejos.y - q.y) / l) * dd };
+      v.el[v.extremo] = { ...p };
+      m[ext] = { ...p };
+    }
   }
 
   private dividirMuro(p: Pt) {
@@ -1115,7 +1172,7 @@ export class Editor {
             if (el.tipo === 'area' && el.muros?.length && typeof m.cual === 'number') {
               vinculados.push(...this.murosEn(m.p));
             }
-            if (el.tipo === 'muro' && (m.cual === 'a' || m.cual === 'b')) {
+            if (el.tipo === 'muro' && !el.chaflan && (m.cual === 'a' || m.cual === 'b')) {
               const q = el[m.cual];
               for (const o of this.datos.elementos) {
                 if (o.tipo !== 'muro' || o === el) continue;
@@ -1296,7 +1353,15 @@ export class Editor {
     const el = this.datos.elementos.find((x) => x.id === a.id);
     if (!el) return;
     const excluir = new Set([el.id, ...a.vinculados.map((v) => v.el.id)]);
-    if (tieneDosPuntos(el) && (a.cual === 'a' || a.cual === 'b')) {
+    if (el.tipo === 'muro' && el.chaflan && (a.cual === 'a' || a.cual === 'b')) {
+      const v = this.vecinoChaflan(el, a.cual);
+      if (!v) return;
+      const q = el.chaflan.q;
+      const l = dist(q, v.lejos) || 1;
+      let d = ((p.x - q.x) * (v.lejos.x - q.x) + (p.y - q.y) * (v.lejos.y - q.y)) / l;
+      if (this.iman) d = Math.round(d / PASO_REJILLA) * PASO_REJILLA;
+      this.aplicarChaflan(el, d);
+    } else if (tieneDosPuntos(el) && (a.cual === 'a' || a.cual === 'b')) {
       const otro = a.cual === 'a' ? el.b : el.a;
       const q = this.ajustar(p, otro, excluir);
       el[a.cual] = q;
@@ -1609,6 +1674,20 @@ export class Editor {
       }
       if (txt) {
         const s = aP(this.cursor);
+        ctx.font = 'bold 12px system-ui, sans-serif';
+        const w = ctx.measureText(txt).width;
+        ctx.fillStyle = 'rgba(37,99,235,0.92)';
+        ctx.fillRect(s.x + 12, s.y + 10, w + 10, 20);
+        ctx.fillStyle = '#fff';
+        ctx.fillText(txt, s.x + 17, s.y + 24);
+      }
+    }
+    // Distancia del corte mientras se arrastra
+    if (a?.k === 'manija' && this.cursor) {
+      const m = this.datos.elementos.find((e) => e.id === a.id);
+      if (m?.tipo === 'muro' && m.chaflan) {
+        const s = aP(this.cursor);
+        const txt = `Corte: ${formatoM(this.distanciaChaflan(m))}`;
         ctx.font = 'bold 12px system-ui, sans-serif';
         const w = ctx.measureText(txt).width;
         ctx.fillStyle = 'rgba(37,99,235,0.92)';
