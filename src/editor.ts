@@ -2,7 +2,7 @@ import { CATALOGO, CATEGORIAS, dibujarSimbolo, itemPorClave, itemsDeCategoria } 
 import { cajaDe, cajaDeTodos, mover, posEtiqueta, puntoLocal, puntosClave, toca } from './elementos';
 import { inyectarEstilos } from './estilos';
 import { exportarPNG, type ImagenCroquis } from './exportar';
-import { aMundo, dist, formatoM, insetPoligono, proyectar } from './geometria';
+import { aMundo, areaPoligono, dist, formatoM, insetPoligono, proyectar } from './geometria';
 import { ICONOS } from './iconos';
 import {
   datosVacios,
@@ -925,9 +925,9 @@ export class Editor {
       tamEtq: 0.3,
     };
     this.registrar();
-    // El piso va primero para que se dibuje debajo de todo
-    this.datos.elementos.unshift(piso);
-    this.datos.elementos.push(...muros);
+    // El piso va al final de la lista para quedar encima de los cuartos que ya existen
+    // (por ejemplo, un cuarto dentro de otro). El dibujo ya pone las áreas debajo de muros y muebles.
+    this.datos.elementos.push(piso, ...muros);
     this.notificar();
     this.cambiarHerramienta('seleccionar');
     this.seleccion = new Set(this.grupoDe(piso));
@@ -1133,7 +1133,11 @@ export class Editor {
     const tol = this.tol(6);
     // Primero los de encima (orden de dibujo invertido); las áreas al final
     const prioridad = (e: Elemento) => (e.tipo === 'area' ? 0 : e.tipo === 'muro' ? 1 : 2);
-    const lista = this.datos.elementos.map((e, i) => ({ e, i })).sort((a, b) => prioridad(b.e) - prioridad(a.e) || b.i - a.i);
+    // Entre áreas que se encimen gana la más chica, para poder elegir un cuarto que está dentro de otro.
+    const tam = (e: Elemento) => (e.tipo === 'area' ? Math.abs(areaPoligono(e.puntos)) : 0);
+    const lista = this.datos.elementos
+      .map((e, i) => ({ e, i }))
+      .sort((a, b) => prioridad(b.e) - prioridad(a.e) || tam(a.e) - tam(b.e) || b.i - a.i);
     for (const { e } of lista) if (toca(e, p, tol)) return e;
     return null;
   }
