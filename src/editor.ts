@@ -28,6 +28,8 @@ export type Herramienta =
   | 'mano'
   | 'muro'
   | 'cuarto'
+  | 'chaflan'
+  | 'dividir'
   | 'puerta'
   | 'puerta2'
   | 'ventana'
@@ -44,6 +46,8 @@ const HERRAMIENTAS: { h: Herramienta; nombre: string; tecla: string; ayuda: stri
   { h: 'mano', nombre: 'Mover vista', tecla: 'H', ayuda: 'Arrastra para desplazar la vista. La rueda del ratón hace zoom.' },
   { h: 'muro', nombre: 'Muro', tecla: 'W', ayuda: 'Clic en cada esquina. Escribe una medida y Enter para fijar el largo. Doble clic o Esc para terminar.' },
   { h: 'cuarto', nombre: 'Cuarto', tecla: 'Q', ayuda: 'Arrastra para crear un cuarto con sus 4 muros. Luego escribe su etiqueta; aparece al centro y puedes moverla con su manija.' },
+  { h: 'chaflan', nombre: 'Cortar esquina', tecla: 'C', ayuda: 'Clic en una esquina para cortarla en diagonal (chaflán). La distancia del corte se ajusta en el panel.' },
+  { h: 'dividir', nombre: 'Agregar esquina', tecla: 'E', ayuda: 'Clic sobre un muro para partirlo en dos. Luego arrastra la nueva esquina para darle otra forma al cuarto.' },
   { h: 'puerta', nombre: 'Puerta', tecla: 'D', ayuda: 'Clic sobre un muro para colocar una puerta. R la gira, F cambia el lado.' },
   { h: 'puerta2', nombre: 'Puerta de doble abatimiento', tecla: 'B', ayuda: 'Puerta de vaivén (abre hacia ambos lados). Activa "Doble puerta" para dos hojas, como en quirófanos.' },
   { h: 'ventana', nombre: 'Ventana', tecla: 'N', ayuda: 'Clic sobre un muro para colocar una ventana.' },
@@ -132,7 +136,7 @@ export class Editor {
   private categoria = 'general';
   private fantasmaAng = 0;
   private aberturaInvertir = false;
-  private estilo = { color: '#111827', muro: '#374151', grosorMuro: 0.15, relleno: '#bfdbfe', patron: 'ninguno' as Patron, acceso: '#16a34a', fondoCuarto: '#ffffff', dobleHoja: false };
+  private estilo = { color: '#111827', muro: '#374151', grosorMuro: 0.15, relleno: '#bfdbfe', patron: 'ninguno' as Patron, acceso: '#16a34a', fondoCuarto: '#ffffff', dobleHoja: false, chaflan: 1 };
   private pendiente: string | null = null;
   private punteros = new Map<number, Pt>();
   private pellizco: { d: number; c: Pt; escala: number; ox: number; oy: number } | null = null;
@@ -234,7 +238,7 @@ export class Editor {
       const b = this.boton(ICONOS[t.h], `${t.nombre} (${t.tecla})`, () => this.cambiarHerramienta(t.h));
       this.botonesHerr.set(t.h, b);
       herr.append(b);
-      if (t.h === 'mano' || t.h === 'ventana' || t.h === 'texto' || t.h === 'cota') herr.append(h('div', { style: 'height:6px' } as never));
+      if (t.h === 'mano' || t.h === 'dividir' || t.h === 'ventana' || t.h === 'texto' || t.h === 'cota') herr.append(h('div', { style: 'height:6px' } as never));
     }
     const lienzo = h('div', { className: 'crq-lienzo' }, [this.canvas]);
     const cuerpo = h('div', { className: 'crq-cuerpo' }, [herr, lienzo, this.panel]);
@@ -291,6 +295,12 @@ export class Editor {
   private grupoDe(el: Elemento): string[] {
     if (el.tipo === 'area' && el.muros?.length) return [el.id, ...el.muros];
     return [el.id];
+  }
+
+  /** Esquinas de un cuarto (inicio de cada muro, en orden). */
+  private esquinasCuarto(el: Area): Pt[] {
+    const porId = new Map(this.datos.elementos.map((e) => [e.id, e]));
+    return (el.muros ?? []).map((id) => porId.get(id)).filter((m): m is Muro => m?.tipo === 'muro').map((m) => m.a);
   }
 
   /** Ajusta el piso de cada cuarto a sus muros (por dentro). */
@@ -357,14 +367,16 @@ export class Editor {
       p.append(this.campoNum('Grosor del muro (m)', this.estilo.grosorMuro, 0.05, 0.6, 0.01, (v) => (this.estilo.grosorMuro = v)));
       p.append(this.campoColor('Color del muro', this.estilo.muro, (c) => (this.estilo.muro = c)));
       if (this.herr === 'cuarto') p.append(this.campoColor('Color de fondo', this.estilo.fondoCuarto, (c) => (this.estilo.fondoCuarto = c), ['#ffffff', ...RELLENOS]));
+    } else if (this.herr === 'chaflan') {
+      p.append(this.campoNum('Distancia del corte (m)', this.estilo.chaflan, 0.1, 20, 0.05, (v) => (this.estilo.chaflan = v)));
     } else if (this.herr === 'puerta2') {
-      p.append(this.campoCheck('Doble puerta (dos hojas, tipo quirófano)', this.estilo.dobleHoja, (v) => (this.estilo.dobleHoja = v), false));
+      p.append(this.campoCheck('Doble puerta (dos puertas que se juntan al centro, tipo quirófano)', this.estilo.dobleHoja, (v) => (this.estilo.dobleHoja = v), false));
     } else if (this.herr === 'area') {
       p.append(this.campoColor('Relleno', this.estilo.relleno, (c) => (this.estilo.relleno = c), RELLENOS));
       p.append(this.campoSelect('Patrón', this.estilo.patron, PATRONES.map((x) => [x.v, x.n]), (v) => (this.estilo.patron = v as Patron)));
     } else if (this.herr === 'acceso') {
       p.append(this.campoColor('Color', this.estilo.acceso, (c) => (this.estilo.acceso = c)));
-    } else if (this.herr !== 'seleccionar' && this.herr !== 'mano' && this.herr !== 'puerta' && this.herr !== 'ventana') {
+    } else if (this.herr !== 'seleccionar' && this.herr !== 'mano' && this.herr !== 'puerta' && this.herr !== 'ventana' && this.herr !== 'dividir') {
       p.append(this.campoColor('Color', this.estilo.color, (c) => (this.estilo.color = c)));
     }
     if (this.herr === 'seleccionar' || this.herr === 'mano') {
@@ -404,7 +416,7 @@ export class Editor {
         p.append(this.campoNum('Ancho (m)', el.ancho, 0.3, 6, 0.05, (v) => (el.ancho = v)));
         if (el.tipo === 'puerta') {
           p.append(this.campoCheck('Doble abatimiento (vaivén)', !!el.vaiven, (v) => (el.vaiven = v)));
-          p.append(this.campoCheck('Doble puerta (dos hojas)', el.hojas === 2, (v) => {
+          p.append(this.campoCheck('Doble puerta (dos puertas)', el.hojas === 2, (v) => {
             el.hojas = v ? 2 : 1;
             this.actualizarPanel();
           }));
@@ -895,6 +907,109 @@ export class Editor {
     this.actualizarEstado();
   }
 
+  // ───────────────────────── Cortar esquinas y partir muros ─────────────────────────
+
+  /** Muros que tienen un extremo en q. */
+  private murosEn(q: Pt): { el: Muro; extremo: 'a' | 'b' }[] {
+    const r: { el: Muro; extremo: 'a' | 'b' }[] = [];
+    for (const o of this.datos.elementos) {
+      if (o.tipo !== 'muro') continue;
+      if (dist(o.a, q) < 1e-6) r.push({ el: o, extremo: 'a' });
+      else if (dist(o.b, q) < 1e-6) r.push({ el: o, extremo: 'b' });
+    }
+    return r;
+  }
+
+  /** Esquina (unión de exactamente dos muros) más cercana al punto. */
+  private esquinaCerca(p: Pt): Pt | null {
+    let mejor: Pt | null = null;
+    let md = this.tol(14);
+    for (const o of this.datos.elementos) {
+      if (o.tipo !== 'muro') continue;
+      for (const q of [o.a, o.b]) {
+        const d = dist(p, q);
+        if (d < md && this.murosEn(q).length === 2) {
+          md = d;
+          mejor = q;
+        }
+      }
+    }
+    return mejor;
+  }
+
+  private cortarEsquina(p: Pt) {
+    const q = this.esquinaCerca(p);
+    if (!q) return this.aviso('Haz clic en una esquina donde se unen dos muros.');
+    const [u, v] = this.murosEn(q);
+    const largo = (m: { el: Muro; extremo: 'a' | 'b' }) => dist(m.el.a, m.el.b);
+    const d = Math.min(this.estilo.chaflan, largo(u) * 0.9, largo(v) * 0.9);
+    const recorte = (m: { el: Muro; extremo: 'a' | 'b' }): Pt => {
+      const otro = m.extremo === 'a' ? m.el.b : m.el.a;
+      const l = dist(q, otro) || 1;
+      return { x: q.x + ((otro.x - q.x) / l) * d, y: q.y + ((otro.y - q.y) / l) * d };
+    };
+    this.registrar();
+    const pu = recorte(u);
+    const pv = recorte(v);
+    // Orden de recorrido: el muro que termina en la esquina va antes que el que empieza en ella
+    const [antes, despues] = u.extremo === 'b' ? [u, v] : [v, u];
+    const pA = antes === u ? pu : pv;
+    const pD = despues === u ? pu : pv;
+    antes.el[antes.extremo] = pA;
+    despues.el[despues.extremo] = pD;
+    const nuevo: Muro = { id: nuevoId(), tipo: 'muro', a: { ...pA }, b: { ...pD }, grosor: antes.el.grosor, color: antes.el.color };
+    this.datos.elementos.push(nuevo);
+    this.insertarEnCuartos(antes.el.id, despues.el.id, [nuevo.id]);
+    this.notificar();
+  }
+
+  private dividirMuro(p: Pt) {
+    let mejor: { m: Muro; t: number } | null = null;
+    let md = this.tol(10);
+    for (const o of this.datos.elementos) {
+      if (o.tipo !== 'muro') continue;
+      const { pt, t } = proyectar(p, o.a, o.b);
+      const d = dist(p, pt) - o.grosor / 2;
+      if (d < md) {
+        md = d;
+        mejor = { m: o, t };
+      }
+    }
+    if (!mejor) return this.aviso('Haz clic sobre un muro.');
+    const { m } = mejor;
+    const l = dist(m.a, m.b);
+    let t = mejor.t;
+    if (this.iman && l > 0) t = Math.round((t * l) / PASO_REJILLA) * PASO_REJILLA / l;
+    if (t * l < 0.05 || (1 - t) * l < 0.05) return;
+    this.registrar();
+    const corte = { x: m.a.x + (m.b.x - m.a.x) * t, y: m.a.y + (m.b.y - m.a.y) * t };
+    const segundo: Muro = { ...m, id: nuevoId(), a: { ...corte }, b: { ...m.b } };
+    m.b = { ...corte };
+    this.datos.elementos.push(segundo);
+    this.insertarEnCuartos(m.id, null, [segundo.id]);
+    this.notificar();
+    // Deja seleccionado el muro para arrastrar la nueva esquina
+    this.cambiarHerramienta('seleccionar');
+    this.seleccion = new Set([m.id]);
+    this.actualizarPanel();
+    this.dibujar();
+  }
+
+  /** Inserta muros nuevos en la lista de los cuartos, justo después de `despuesDe`. */
+  private insertarEnCuartos(despuesDe: string, antesDe: string | null, ids: string[]) {
+    for (const el of this.datos.elementos) {
+      if (el.tipo !== 'area' || !el.muros) continue;
+      const i = el.muros.indexOf(despuesDe);
+      if (i < 0) continue;
+      if (antesDe && el.muros[(i + 1) % el.muros.length] !== antesDe) continue;
+      el.muros.splice(i + 1, 0, ...ids);
+    }
+  }
+
+  private aviso(txt: string) {
+    this.estado.innerHTML = `<b style="color:#dc2626">${txt}</b>`;
+  }
+
   // ───────────────────────── Ratón y táctil ─────────────────────────
 
   private elementoEn(p: Pt): Elemento | null {
@@ -915,7 +1030,8 @@ export class Editor {
     if (tieneDosPuntos(el)) return [{ cual: 'a', p: el.a }, { cual: 'b', p: el.b }];
     if (el.tipo === 'area') {
       const etq = el.nombre || el.mostrarM2 ? [{ cual: 'etq' as const, p: posEtiqueta(el) }] : [];
-      return [...(el.muros?.length ? [] : el.puntos.map((p, i) => ({ cual: i, p }))), ...etq];
+      const vertices = el.muros?.length ? this.esquinasCuarto(el) : el.puntos;
+      return [...vertices.map((p, i) => ({ cual: i, p })), ...etq];
     }
     if (el.tipo === 'mueble') {
       return [
@@ -996,6 +1112,9 @@ export class Editor {
           if (dist(p, m.p) <= this.tol(9)) {
             const el = this.cuartoSeleccionado() ?? this.seleccionados()[0];
             const vinculados: { el: Muro; extremo: 'a' | 'b' }[] = [];
+            if (el.tipo === 'area' && el.muros?.length && typeof m.cual === 'number') {
+              vinculados.push(...this.murosEn(m.p));
+            }
             if (el.tipo === 'muro' && (m.cual === 'a' || m.cual === 'b')) {
               const q = el[m.cual];
               for (const o of this.datos.elementos) {
@@ -1042,6 +1161,12 @@ export class Editor {
         this.accion = { k: 'nuevo', inicio: a, el: { id: '', tipo: 'area', puntos: [], relleno: '#fff', opacidad: 0, patron: 'ninguno', borde: '#fff', nombre: '', mostrarM2: false } };
         return;
       }
+      case 'chaflan':
+        this.cortarEsquina(p);
+        return;
+      case 'dividir':
+        this.dividirMuro(p);
+        return;
       case 'puerta':
       case 'puerta2':
       case 'ventana': {
@@ -1178,6 +1303,9 @@ export class Editor {
       for (const v of a.vinculados) v.el[v.extremo] = { ...q };
     } else if (el.tipo === 'area' && a.cual === 'etq') {
       el.etqPos = this.iman ? { x: redondear(p.x), y: redondear(p.y) } : { ...p };
+    } else if (el.tipo === 'area' && typeof a.cual === 'number' && el.muros?.length) {
+      const q = this.ajustar(p, null, excluir);
+      for (const v of a.vinculados) v.el[v.extremo] = { ...q };
     } else if (el.tipo === 'area' && typeof a.cual === 'number') {
       el.puntos[a.cual] = this.ajustar(p, null, excluir);
     } else if (el.tipo === 'mueble') {
@@ -1512,7 +1640,17 @@ export class Editor {
       ctx.stroke();
     }
     // Indicador de ajuste a esquina
-    if (this.cursor && this.herr !== 'seleccionar' && this.herr !== 'mano' && this.herr !== 'lapiz' && this.herr !== 'mueble') {
+    if (this.cursor && this.herr === 'chaflan') {
+      const q = this.esquinaCerca(this.cursor);
+      if (q) {
+        const s = aP(q);
+        ctx.strokeStyle = '#dc2626';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, 9, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    } else if (this.cursor && this.herr !== 'seleccionar' && this.herr !== 'mano' && this.herr !== 'lapiz' && this.herr !== 'mueble' && this.herr !== 'dividir') {
       const q = this.ajustar(this.cursor, this.poli?.puntos[this.poli.puntos.length - 1]);
       const s = aP(q);
       ctx.strokeStyle = '#2563eb';

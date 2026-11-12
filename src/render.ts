@@ -1,7 +1,7 @@
 import { dibujarSimbolo } from './catalogo';
 import { contorno, posEtiqueta } from './elementos';
 import { areaPoligono, dist, formatoM } from './geometria';
-import type { Abertura, Area, DatosCroquis, Elemento, Patron, Pt } from './modelo';
+import type { Abertura, Area, DatosCroquis, Elemento, Muro, Patron, Pt } from './modelo';
 
 /** pantalla = mundo * escala + o */
 export interface Vista {
@@ -194,13 +194,14 @@ function dibujarAbertura(ctx: CanvasRenderingContext2D, el: Abertura, fondo: str
     for (const [hx, largo] of hojas) {
       for (const lado of lados) {
         const y = (lado * g) / 2;
-        // Hoja (punteada del lado secundario en las de vaivén)
-        ctx.lineWidth = 0.03;
-        ctx.setLineDash(lado === s ? [] : [0.05, 0.04]);
-        ctx.beginPath();
-        ctx.moveTo(hx, y);
-        ctx.lineTo(hx, y + lado * largo);
-        ctx.stroke();
+        // Hoja abierta (solo del lado principal; del otro lado basta el arco)
+        if (lado === s) {
+          ctx.lineWidth = 0.035;
+          ctx.beginPath();
+          ctx.moveTo(hx, y);
+          ctx.lineTo(hx, y + lado * largo);
+          ctx.stroke();
+        }
         // Arco de giro
         const a1 = Math.atan2(lado, 0);
         const a2 = hx < 0 ? 0 : Math.PI;
@@ -237,16 +238,9 @@ export function dibujarElemento(ctx: CanvasRenderingContext2D, el: Elemento, d: 
     case 'area':
       dibujarArea(ctx, el, escala);
       break;
-    case 'muro': {
-      ctx.lineCap = 'square';
-      ctx.strokeStyle = el.color;
-      ctx.lineWidth = el.grosor;
-      ctx.beginPath();
-      ctx.moveTo(el.a.x, el.a.y);
-      ctx.lineTo(el.b.x, el.b.y);
-      ctx.stroke();
+    case 'muro':
+      // Los muros se dibujan unidos en dibujarMuros()
       break;
-    }
     case 'puerta':
     case 'ventana':
       dibujarAbertura(ctx, el, fondo);
@@ -345,6 +339,55 @@ export function dibujarElemento(ctx: CanvasRenderingContext2D, el: Elemento, d: 
   }
 }
 
+const clavePt = (p: Pt) => `${Math.round(p.x * 1e4)},${Math.round(p.y * 1e4)}`;
+
+/**
+ * Dibuja los muros uniendo en inglete los que comparten esquina (mismo grosor y color),
+ * para que las esquinas en diagonal queden limpias.
+ */
+function dibujarMuros(ctx: CanvasRenderingContext2D, muros: Muro[]) {
+  const grado = new Map<string, number>();
+  for (const m of muros) for (const p of [m.a, m.b]) grado.set(clavePt(p), (grado.get(clavePt(p)) ?? 0) + 1);
+  const usados = new Set<Muro>();
+  const estilo = (m: Muro) => `${m.color}|${m.grosor}`;
+  /** Busca un muro libre que continúe desde `p`; lo devuelve orientado. */
+  const siguiente = (p: Pt, est: string): [Pt, Pt, Muro] | null => {
+    if (grado.get(clavePt(p)) !== 2) return null;
+    for (const m of muros) {
+      if (usados.has(m) || estilo(m) !== est) continue;
+      if (clavePt(m.a) === clavePt(p)) return [m.a, m.b, m];
+      if (clavePt(m.b) === clavePt(p)) return [m.b, m.a, m];
+    }
+    return null;
+  };
+  ctx.save();
+  ctx.lineCap = 'square';
+  ctx.lineJoin = 'miter';
+  ctx.miterLimit = 4;
+  for (const m0 of muros) {
+    if (usados.has(m0)) continue;
+    usados.add(m0);
+    const est = estilo(m0);
+    const cadena: Pt[] = [m0.a, m0.b];
+    for (let s = siguiente(cadena[cadena.length - 1], est); s; s = siguiente(cadena[cadena.length - 1], est)) {
+      usados.add(s[2]);
+      cadena.push(s[1]);
+    }
+    for (let s = siguiente(cadena[0], est); s; s = siguiente(cadena[0], est)) {
+      usados.add(s[2]);
+      cadena.unshift(s[1]);
+    }
+    const cerrada = cadena.length > 3 && clavePt(cadena[0]) === clavePt(cadena[cadena.length - 1]);
+    ctx.strokeStyle = m0.color;
+    ctx.lineWidth = m0.grosor;
+    ctx.beginPath();
+    cadena.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
+    if (cerrada) ctx.closePath();
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 function dibujarCuadricula(ctx: CanvasRenderingContext2D, v: Vista, ancho: number, alto: number) {
   const x0 = -v.ox / v.escala;
   const y0 = -v.oy / v.escala;
@@ -386,7 +429,15 @@ export function dibujarEscena(ctx: CanvasRenderingContext2D, d: DatosCroquis, v:
   ctx.translate(v.ox, v.oy);
   ctx.scale(v.escala, v.escala);
   if (o.cuadricula) dibujarCuadricula(ctx, v, o.ancho, o.alto);
-  for (const el of ordenar([...d.elementos, ...(o.extras ?? [])])) dibujarElemento(ctx, el, d, v.escala, fondo);
+  const todos = ordenar([...d.elementos, ...(o.extras ?? [])]);
+  let murosListos = false;
+  for (const el of todos) {
+    if (el.tipo === 'muro' && !murosListos) {
+      dibujarMuros(ctx, todos.filter((e): e is Muro => e.tipo === 'muro'));
+      murosListos = true;
+    }
+    dibujarElemento(ctx, el, d, v.escala, fondo);
+  }
   if (o.seleccion?.size) {
     ctx.strokeStyle = '#2563eb';
     ctx.lineWidth = 1.5 / v.escala;

@@ -12,8 +12,10 @@ Todo se dibuja en **metros**: los muros, puertas y muebles tienen medidas reales
 | Mover vista | `H` | También con rueda del ratón (zoom), botón central, `Espacio`+arrastrar o pellizco en pantalla táctil. |
 | Muro | `W` | Clic en cada esquina. Mientras dibujas puedes **teclear el largo** (p. ej. `3.5`) y `Enter`. Doble clic, `Esc` o clic derecho para terminar. |
 | Cuarto | `Q` | Arrastra un rectángulo y crea sus 4 muros con su piso. Escribe la **etiqueta** (aparece al centro; se mueve con su manija y tiene tamaño y color de letra), elige el **color de fondo** y muestra los m² interiores. Al hacer clic dentro se selecciona el cuarto completo y se mueve con sus muros. |
+| Cortar esquina | `C` | Clic en la esquina de un cuarto o de dos muros para cortarla en diagonal (chaflán); la distancia se ajusta en el panel. |
+| Agregar esquina | `E` | Parte un muro en dos para arrastrar la nueva esquina y darle otra forma al cuarto. Con el cuarto seleccionado, sus esquinas se arrastran directamente. |
 | Puerta / Ventana | `D` / `N` | Clic sobre un muro: se alinea sola. `F` cambia el lado hacia el que abre; en el panel se cambia ancho y bisagra. |
-| Puerta de doble abatimiento | `B` | Puerta de vaivén (abre a ambos lados). Opción **Doble puerta** para dos hojas, como en quirófanos. |
+| Puerta de doble abatimiento | `B` | Puerta de vaivén (abre a ambos lados). Opción **Doble puerta**: dos puertas que se juntan al centro, como en quirófanos. |
 | Área / sombreado | `A` | Arrastra un rectángulo o marca vértices y doble clic. Color de relleno, opacidad, patrón (rayado, cuadriculado, puntos), nombre y m². |
 | Mobiliario | `M` | Por categoría: **General**, **Hospitalario** (NOM-016-SSA3-2012), **Control de plagas** (NOM-232-SSA1-2009), **Rayos X** (NOM-229-SSA1-2002) y **Alimentos** (NOM-251-SSA1-2009). `R` gira 90°. |
 | Etiqueta | `T` | Texto libre con tamaño, color, negrita y ángulo. |
