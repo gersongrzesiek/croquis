@@ -1,5 +1,5 @@
-import type { Elemento, Pt } from './modelo';
-import { aLocal, aMundo, distSeg, enPoligono } from './geometria';
+import type { Area, Elemento, Pt } from './modelo';
+import { aLocal, aMundo, centroide, distSeg, enPoligono } from './geometria';
 
 export interface Caja {
   minx: number;
@@ -40,9 +40,11 @@ export function contorno(el: Elemento): Pt[] {
     case 'ventana': {
       const g = el.grosor / 2;
       if (el.tipo === 'ventana') return esquinasCaja(el.p, el.ancho, el.grosor, el.ang);
+      const hoja = el.hojas === 2 ? el.ancho / 2 : el.ancho;
+      if (el.vaiven) return esquinasCaja(el.p, el.ancho, el.grosor + hoja * 2, el.ang, -g - hoja);
       const lado = el.invertir ? 1 : -1;
-      const y0 = lado > 0 ? -g : -g - el.ancho;
-      return esquinasCaja(el.p, el.ancho, el.grosor + el.ancho, el.ang, y0);
+      const y0 = lado > 0 ? -g : -g - hoja;
+      return esquinasCaja(el.p, el.ancho, el.grosor + hoja, el.ang, y0);
     }
     case 'texto': {
       const w = anchoTexto(el.texto, el.tam);
@@ -131,12 +133,20 @@ export function mover(el: Elemento, dx: number, dy: number) {
       m(el.b);
       break;
     case 'area':
+      el.puntos.forEach(m);
+      if (el.etqPos) m(el.etqPos);
+      break;
     case 'trazo':
       el.puntos.forEach(m);
       break;
     default:
       m(el.p);
   }
+}
+
+/** Posición de la etiqueta de un área (centro por defecto). */
+export function posEtiqueta(el: Area): Pt {
+  return el.etqPos ?? centroide(el.puntos);
 }
 
 /** Puntos a los que se "pega" el cursor (extremos de muros, vértices…). */

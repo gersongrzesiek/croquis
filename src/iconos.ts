@@ -7,6 +7,7 @@ export const ICONOS: Record<string, string> = {
   muro: svg('<path d="M3 7h14v5H3z" fill="currentColor"/>'),
   cuarto: svg('<rect x="3.5" y="3.5" width="13" height="13" stroke-width="3"/>'),
   puerta: svg('<path d="M3 17h3M15 17h2M5 17V5M5 5a12 12 0 0112 12" /><path d="M5 5a12 12 0 0112 12" stroke-dasharray="2 2"/>'),
+  puerta2: svg('<path d="M2 10h2M16 10h2M4 10V3M16 10V3M4 3a7 7 0 017 7M16 3a7 7 0 00-6.5 7" /><path d="M4 10v7M16 10v7M4 17a7 7 0 007-7M16 17a7 7 0 01-6.5-7" stroke-dasharray="1.6 1.6"/>'),
   ventana: svg('<rect x="2.5" y="7" width="15" height="6"/><path d="M2.5 10h15"/>'),
   area: svg('<path d="M3 5l10-2 4 9-8 5-6-4z" fill="currentColor" fill-opacity=".25"/>'),
   mueble: svg('<rect x="4" y="6.5" width="12" height="7"/><path d="M7 4h6M7 16h6"/>'),

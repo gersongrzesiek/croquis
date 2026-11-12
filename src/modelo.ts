@@ -25,6 +25,10 @@ export interface Abertura extends Base {
   invertir: boolean;
   /** Bisagra del otro lado. */
   espejo: boolean;
+  /** Doble abatimiento (abre hacia ambos lados, de vaivén). */
+  vaiven?: boolean;
+  /** Número de hojas: 2 = doble puerta (tipo quirófano). */
+  hojas?: 1 | 2;
   color: string;
 }
 export interface Area extends Base {
@@ -34,8 +38,16 @@ export interface Area extends Base {
   opacidad: number;
   patron: Patron;
   borde: string;
+  /** Texto de la etiqueta del área o cuarto. */
   nombre: string;
   mostrarM2: boolean;
+  /** Tamaño de letra de la etiqueta, en metros (0.3 por defecto). */
+  tamEtq?: number;
+  colorEtq?: string;
+  /** Posición de la etiqueta; si no hay, va en el centro del área. */
+  etqPos?: Pt | null;
+  /** Si es el piso de un cuarto: ids de sus muros, en orden. El área sigue a los muros. */
+  muros?: string[];
 }
 export interface Mueble extends Base {
   tipo: 'mueble';

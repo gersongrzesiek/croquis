@@ -11,10 +11,11 @@ Todo se dibuja en **metros**: los muros, puertas y muebles tienen medidas reales
 | Seleccionar | `V` | Clic para seleccionar, arrastrar para mover, arrastrar en vacío para seleccionar varios. Manijas para mover extremos de muros (las esquinas unidas se mueven juntas), girar o cambiar el tamaño de muebles. |
 | Mover vista | `H` | También con rueda del ratón (zoom), botón central, `Espacio`+arrastrar o pellizco en pantalla táctil. |
 | Muro | `W` | Clic en cada esquina. Mientras dibujas puedes **teclear el largo** (p. ej. `3.5`) y `Enter`. Doble clic, `Esc` o clic derecho para terminar. |
-| Cuarto | `Q` | Arrastra un rectángulo y crea sus 4 muros. |
+| Cuarto | `Q` | Arrastra un rectángulo y crea sus 4 muros con su piso. Escribe la **etiqueta** (aparece al centro; se mueve con su manija y tiene tamaño y color de letra), elige el **color de fondo** y muestra los m² interiores. Al hacer clic dentro se selecciona el cuarto completo y se mueve con sus muros. |
 | Puerta / Ventana | `D` / `N` | Clic sobre un muro: se alinea sola. `F` cambia el lado hacia el que abre; en el panel se cambia ancho y bisagra. |
+| Puerta de doble abatimiento | `B` | Puerta de vaivén (abre a ambos lados). Opción **Doble puerta** para dos hojas, como en quirófanos. |
 | Área / sombreado | `A` | Arrastra un rectángulo o marca vértices y doble clic. Color de relleno, opacidad, patrón (rayado, cuadriculado, puntos), nombre y m². |
-| Mobiliario | `M` | Mesa, mesa de trabajo, silla, escritorio, anaquel, mostrador, refrigerador, congelador, estufa, tarja, lavabo, WC, regadera, tarima, equipo, extintor, botiquín, bote de basura. `R` gira 90°. |
+| Mobiliario | `M` | Por categoría: **General**, **Hospitalario** (NOM-016-SSA3-2012), **Control de plagas** (NOM-232-SSA1-2009), **Rayos X** (NOM-229-SSA1-2002) y **Alimentos** (NOM-251-SSA1-2009). `R` gira 90°. |
 | Etiqueta | `T` | Texto libre con tamaño, color, negrita y ángulo. |
 | Acceso | `X` | Flecha con la leyenda "ACCESO" (editable). |
 | Cota | `K` | Línea de medida con la distancia en metros. |

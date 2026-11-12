@@ -1,6 +1,6 @@
 import { dibujarSimbolo } from './catalogo';
-import { contorno } from './elementos';
-import { areaPoligono, centroide, dist, formatoM } from './geometria';
+import { contorno, posEtiqueta } from './elementos';
+import { areaPoligono, dist, formatoM } from './geometria';
 import type { Abertura, Area, DatosCroquis, Elemento, Patron, Pt } from './modelo';
 
 /** pantalla = mundo * escala + o */
@@ -140,16 +140,18 @@ function dibujarArea(ctx: CanvasRenderingContext2D, el: Area, escala: number) {
       ctx.restore();
     }
   }
-  ctx.strokeStyle = el.borde;
-  ctx.lineWidth = 0.02;
-  ctx.setLineDash([0.12, 0.08]);
-  ctx.stroke();
-  ctx.setLineDash([]);
+  if (!el.muros?.length) {
+    ctx.strokeStyle = el.borde;
+    ctx.lineWidth = 0.02;
+    ctx.setLineDash([0.12, 0.08]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
   const etiqueta = [el.nombre, el.mostrarM2 && el.puntos.length > 2 ? `${areaPoligono(el.puntos).toFixed(2)} m²` : '']
     .filter(Boolean)
     .join('\n');
   if (etiqueta) {
-    textoMundo(ctx, etiqueta, centroide(el.puntos), Math.max(0.22, 11 / escala), '#111827', {
+    textoMundo(ctx, etiqueta, posEtiqueta(el), el.tamEtq ?? 0.3, el.colorEtq ?? '#111827', {
       alinear: 'center',
       base: 'middle',
       negrita: true,
@@ -185,24 +187,34 @@ function dibujarAbertura(ctx: CanvasRenderingContext2D, el: Abertura, fondo: str
     ctx.stroke();
   } else {
     const s = el.invertir ? 1 : -1;
-    const hx = el.espejo ? w / 2 : -w / 2;
-    const hy = (s * g) / 2;
-    ctx.lineWidth = 0.03;
-    ctx.beginPath();
-    ctx.moveTo(hx, hy);
-    ctx.lineTo(hx, hy + s * w);
-    ctx.stroke();
-    const a1 = Math.atan2(s, 0);
-    const a2 = hx < 0 ? 0 : Math.PI;
-    let delta = a1 - a2;
-    while (delta > Math.PI) delta -= 2 * Math.PI;
-    while (delta <= -Math.PI) delta += 2 * Math.PI;
-    ctx.lineWidth = 0.015;
-    ctx.setLineDash([0.06, 0.04]);
-    ctx.beginPath();
-    ctx.arc(hx, hy, w, a2, a1, delta < 0);
-    ctx.stroke();
-    ctx.setLineDash([]);
+    // Bisagras: [x de la bisagra, largo de la hoja]
+    const hojas: [number, number][] =
+      el.hojas === 2 ? [[-w / 2, w / 2], [w / 2, w / 2]] : [[el.espejo ? w / 2 : -w / 2, w]];
+    const lados = el.vaiven ? [s, -s] : [s];
+    for (const [hx, largo] of hojas) {
+      for (const lado of lados) {
+        const y = (lado * g) / 2;
+        // Hoja (punteada del lado secundario en las de vaivén)
+        ctx.lineWidth = 0.03;
+        ctx.setLineDash(lado === s ? [] : [0.05, 0.04]);
+        ctx.beginPath();
+        ctx.moveTo(hx, y);
+        ctx.lineTo(hx, y + lado * largo);
+        ctx.stroke();
+        // Arco de giro
+        const a1 = Math.atan2(lado, 0);
+        const a2 = hx < 0 ? 0 : Math.PI;
+        let delta = a1 - a2;
+        while (delta > Math.PI) delta -= 2 * Math.PI;
+        while (delta <= -Math.PI) delta += 2 * Math.PI;
+        ctx.lineWidth = 0.015;
+        ctx.setLineDash([0.06, 0.04]);
+        ctx.beginPath();
+        ctx.arc(hx, y, largo, a2, a1, delta < 0);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
   }
   ctx.restore();
 }

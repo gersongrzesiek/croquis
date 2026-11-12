@@ -65,3 +65,34 @@ export function aMundo(p: Pt, centro: Pt, ang: number): Pt {
 export function formatoM(m: number): string {
   return `${m.toFixed(2)} m`;
 }
+
+/** Encoge un polígono simple `d` metros hacia adentro (esquinas en inglete). */
+export function insetPoligono(pts: Pt[], d: number): Pt[] {
+  const n = pts.length;
+  if (n < 3 || d <= 0) return pts.map((p) => ({ ...p }));
+  // Orientación: área con signo
+  let s = 0;
+  for (let i = 0; i < n; i++) {
+    const a = pts[i];
+    const b = pts[(i + 1) % n];
+    s += a.x * b.y - b.x * a.y;
+  }
+  const sentido = s > 0 ? 1 : -1;
+  const lineas = pts.map((a, i) => {
+    const b = pts[(i + 1) % n];
+    const l = dist(a, b) || 1;
+    // Normal hacia adentro
+    const nx = (-(b.y - a.y) / l) * sentido;
+    const ny = ((b.x - a.x) / l) * sentido;
+    return { a: { x: a.x + nx * d, y: a.y + ny * d }, b: { x: b.x + nx * d, y: b.y + ny * d } };
+  });
+  return lineas.map((l2, i) => {
+    const l1 = lineas[(i - 1 + n) % n];
+    const x1 = l1.a.x, y1 = l1.a.y, x2 = l1.b.x, y2 = l1.b.y;
+    const x3 = l2.a.x, y3 = l2.a.y, x4 = l2.b.x, y4 = l2.b.y;
+    const den = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+    if (Math.abs(den) < 1e-9) return { ...l2.a };
+    const t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / den;
+    return { x: x1 + t * (x2 - x1), y: y1 + t * (y2 - y1) };
+  });
+}
