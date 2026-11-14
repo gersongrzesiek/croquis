@@ -4,6 +4,7 @@
  * Es solo una vista: se calcula a partir de los mismos datos del plano.
  */
 import { dibujarSimbolo } from './catalogo';
+import { alturaModelo, modeloMueble } from './muebles3d';
 import { cajaDeTodos, posEtiqueta, type Caja } from './elementos';
 import { aMundo, areaPoligono, dist } from './geometria';
 import type { Abertura, DatosCroquis, Elemento, Mueble, Muro, Norte, Pt } from './modelo';
@@ -20,51 +21,9 @@ const PIEZA = 0.4;
 const C = Math.cos(Math.PI / 6);
 const S = 0.5;
 
-/** Altura típica de cada mueble del catálogo (m). Lo que no está aquí mide 0.8 m. Hasta 5 cm se dibuja plano en el piso. */
-const ALTURAS: Record<string, number> = {
-  silla: 0.45,
-  'asiento-giratorio': 0.5,
-  banqueta: 0.25,
-  anaquel: 1.8,
-  'anaquel-plag': 1.8,
-  'gabinete-llave': 1.8,
-  'casillero-epp': 1.8,
-  vestidor: 1.9,
-  mampara: 1.9,
-  mandiles: 1.6,
-  portasueros: 1.8,
-  'bucky-vertical': 1.8,
-  'tubo-rx': 1.9,
-  mastografo: 1.7,
-  panoramico: 1.7,
-  refrigerador: 1.7,
-  'camara-fria': 2.2,
-  congelador: 0.9,
-  wc: 0.4,
-  bote: 0.6,
-  'bote-rpbi': 0.6,
-  'bote-pedal': 0.6,
-  'cama-hosp': 0.6,
-  camilla: 0.6,
-  tarima: 0.15,
-  bascula: 0.1,
-  extintor: 0.6,
-  'envases-vacios': 1,
-  regadera: 0,
-  'regadera-emerg': 0,
-  coladera: 0,
-  'trampa-grasa': 0,
-  'lampara-quir': 0,
-  'lampara-seg': 0,
-  'luz-roja': 0,
-  'senal-rad': 0,
-  'senal-peligro': 0,
-  campana: 0,
-  extractor: 0,
-};
-
-export function alturaMueble(clave: string): number {
-  return ALTURAS[clave] ?? 0.8;
+/** Altura del mueble en la vista isométrica (0 = va plano en el piso). */
+export function alturaMueble(el: Mueble): number {
+  return alturaModelo(el);
 }
 
 export interface OpcionesIso {
@@ -107,7 +66,7 @@ export function cajaIso(d: DatosCroquis, o: OpcionesIso): Caja | null {
   // El norte no ocupa lugar: en esta vista va fijo en una esquina
   const c = cajaDeTodos(d.elementos.filter((e) => e.tipo !== 'norte'));
   if (!c) return null;
-  const alto = Math.max(o.altura, ...d.elementos.map((e) => (e.tipo === 'mueble' ? alturaMueble(e.clave) : 0)));
+  const alto = Math.max(o.altura, ...d.elementos.map((e) => (e.tipo === 'mueble' ? alturaMueble(e) : 0)));
   const r: Caja = { minx: Infinity, miny: Infinity, maxx: -Infinity, maxy: -Infinity };
   for (const x of [c.minx, c.maxx])
     for (const y of [c.miny, c.maxy])
@@ -169,6 +128,8 @@ interface Prisma {
   /** Muro al que pertenece la pieza (para saber si da al frente). */
   muro?: Muro;
   frontal?: boolean;
+  /** Superficie curva: sin aristas verticales. */
+  liso?: boolean;
 }
 
 /** Recorta un polígono convexo con el semiplano dot(p, u) >= k. */
@@ -338,44 +299,49 @@ function prismasMuros(muros: Muro[], aberturas: Abertura[], o: OpcionesIso): Pri
 }
 
 function prismasMueble(el: Mueble): Prisma[] {
-  const alto = alturaMueble(el.clave);
-  const nx = Math.max(1, Math.ceil(el.ancho / PIEZA));
-  const ny = Math.max(1, Math.ceil(el.alto / PIEZA));
   const res: Prisma[] = [];
-  const tapa = (ctx: CanvasRenderingContext2D) => {
+  const simbolo = (ctx: CanvasRenderingContext2D) => {
     ctx.save();
     ctx.translate(el.p.x, el.p.y);
     ctx.rotate(el.ang);
-    ctx.fillStyle = aclarar(el.color, 0.97);
-    ctx.fillRect(-el.ancho / 2, -el.alto / 2, el.ancho, el.alto);
     dibujarSimbolo(ctx, el.clave, el.ancho, el.alto, el.color, 0.02);
     ctx.restore();
   };
-  for (let i = 0; i < nx; i++)
-    for (let j = 0; j < ny; j++) {
-      const x0 = -el.ancho / 2 + (el.ancho * i) / nx;
-      const x1 = -el.ancho / 2 + (el.ancho * (i + 1)) / nx;
-      const y0 = -el.alto / 2 + (el.alto * j) / ny;
-      const y1 = -el.alto / 2 + (el.alto * (j + 1)) / ny;
-      const pts = [
-        { x: x0, y: y0 },
-        { x: x1, y: y0 },
-        { x: x1, y: y1 },
-        { x: x0, y: y1 },
-      ].map((p) => aMundo(p, el.p, el.ang));
-      res.push({
-        pts,
-        z0: 0,
-        z1: alto,
-        corte: [j > 0, i < nx - 1, j < ny - 1, i > 0],
-        color: el.color,
-        luzLados: [0.72, 0.86],
-        luzTapa: 0.97,
-        borde: el.color,
-        tapa,
-        prof: 0,
-      });
+  for (const pz of modeloMueble(el)) {
+    const base = {
+      z0: pz.z0,
+      z1: pz.z1,
+      color: pz.mat.color,
+      luzLados: pz.mat.luzLados,
+      luzTapa: pz.mat.luzTapa,
+      borde: el.color,
+      tapa: pz.simbolo ? simbolo : undefined,
+      prof: 0,
+      liso: pz.liso,
+    };
+    const q = pz.pts;
+    if (q.length !== 4) {
+      res.push({ ...base, pts: q, corte: q.map(() => false) });
+      continue;
     }
+    // Las cajas grandes se trocean para que se ordenen bien con los muros y otros muebles
+    const lu = dist(q[0], q[1]);
+    const lv = dist(q[0], q[3]);
+    const nu = Math.max(1, Math.ceil(lu / PIEZA));
+    const nv = Math.max(1, Math.ceil(lv / PIEZA));
+    const en = (a: number, b: number): Pt => ({
+      x: q[0].x + (q[1].x - q[0].x) * a + (q[3].x - q[0].x) * b,
+      y: q[0].y + (q[1].y - q[0].y) * a + (q[3].y - q[0].y) * b,
+    });
+    for (let i = 0; i < nu; i++)
+      for (let j = 0; j < nv; j++) {
+        res.push({
+          ...base,
+          pts: [en(i / nu, j / nv), en((i + 1) / nu, j / nv), en((i + 1) / nu, (j + 1) / nv), en(i / nu, (j + 1) / nv)],
+          corte: [j > 0, i < nu - 1, j < nv - 1, i > 0],
+        });
+      }
+  }
   return res;
 }
 
@@ -384,6 +350,89 @@ function plano(ctx: CanvasRenderingContext2D, z: number, giro: number) {
   ctx.translate(0, -z);
   ctx.transform(C, S, -C, S, 0, 0);
   if (giro) ctx.rotate((giro * Math.PI) / 2);
+}
+
+/**
+ * Ordena las piezas de atrás hacia adelante. Si dos piezas se enciman en pantalla y están separadas
+ * en algún eje (vistas desde el observador: x, y o altura), la de atrás o la de abajo va primero;
+ * si no se puede decidir así (piezas en diagonal), se usa la profundidad de su centro.
+ */
+function ordenarPrismas(prismas: Prisma[], giro: number) {
+  const n = prismas.length;
+  const cajas = prismas.map((p) => {
+    const r = p.pts.map((q) => girar(q, giro));
+    const xs = r.map((q) => q.x);
+    const ys = r.map((q) => q.y);
+    const sx = r.map((q) => (q.x - q.y) * C);
+    const sy = r.map((q) => (q.x + q.y) * S);
+    return {
+      x0: Math.min(...xs),
+      x1: Math.max(...xs),
+      y0: Math.min(...ys),
+      y1: Math.max(...ys),
+      px0: Math.min(...sx),
+      px1: Math.max(...sx),
+      py0: Math.min(...sy) - p.z1,
+      py1: Math.max(...sy) - p.z0,
+    };
+  });
+  const e = 1e-6;
+  const detras = (i: number, j: number) => {
+    const a = cajas[i];
+    const b = cajas[j];
+    return a.x1 <= b.x0 + e || a.y1 <= b.y0 + e || prismas[i].z1 <= prismas[j].z0 + e;
+  };
+  const despues: number[][] = prismas.map(() => []);
+  const grado = new Array(n).fill(0);
+  for (let i = 0; i < n; i++) {
+    const a = cajas[i];
+    for (let j = i + 1; j < n; j++) {
+      const b = cajas[j];
+      // Solo importa el orden si se enciman en pantalla
+      if (a.px1 <= b.px0 + e || b.px1 <= a.px0 + e || a.py1 <= b.py0 + e || b.py1 <= a.py0 + e) continue;
+      let primero: number;
+      const ij = detras(i, j);
+      const ji = detras(j, i);
+      if (ij && !ji) primero = i;
+      else if (ji && !ij) primero = j;
+      else {
+        const cmp = prismas[i].prof - prismas[j].prof || prismas[i].z0 - prismas[j].z0;
+        primero = cmp <= 0 ? i : j;
+      }
+      const segundo = primero === i ? j : i;
+      despues[primero].push(segundo);
+      grado[segundo]++;
+    }
+  }
+  // Orden topológico; ante un ciclo, sale la pieza más lejana que quede
+  const listo = new Array(n).fill(false);
+  const orden: Prisma[] = [];
+  const disponibles: number[] = [];
+  for (let i = 0; i < n; i++) if (!grado[i]) disponibles.push(i);
+  const masLejana = (lista: number[]) => {
+    let k = 0;
+    for (let t = 1; t < lista.length; t++) {
+      const a = prismas[lista[t]];
+      const b = prismas[lista[k]];
+      if (a.prof < b.prof || (a.prof === b.prof && a.z0 < b.z0)) k = t;
+    }
+    return k;
+  };
+  while (orden.length < n) {
+    let i: number;
+    if (disponibles.length) {
+      i = disponibles.splice(masLejana(disponibles), 1)[0];
+    } else {
+      const resto = [];
+      for (let t = 0; t < n; t++) if (!listo[t]) resto.push(t);
+      i = resto[masLejana(resto)];
+    }
+    if (listo[i]) continue;
+    listo[i] = true;
+    orden.push(prismas[i]);
+    for (const j of despues[i]) if (!listo[j] && --grado[j] === 0) disponibles.push(j);
+  }
+  prismas.splice(0, n, ...orden);
 }
 
 /**
@@ -465,16 +514,35 @@ function dibujarPrisma(ctx: CanvasRenderingContext2D, p: Prisma, giro: number, p
       ctx.moveTo(cara[3].x, cara[3].y);
       ctx.lineTo(cara[2].x, cara[2].y);
       // Aristas verticales solo en esquinas reales (no donde se troceó)
-      if (!p.corte[(i + n - 1) % n]) {
+      if (!p.corte[(i + n - 1) % n] && !p.liso) {
         ctx.moveTo(cara[0].x, cara[0].y);
         ctx.lineTo(cara[3].x, cara[3].y);
       }
-      if (!p.corte[(i + 1) % n]) {
+      if (!p.corte[(i + 1) % n] && !p.liso) {
         ctx.moveTo(cara[1].x, cara[1].y);
         ctx.lineTo(cara[2].x, cara[2].y);
       }
       ctx.stroke();
     }
+  }
+  // Contorno de las superficies curvas: solo las dos aristas verticales de la silueta
+  if (p.liso && bordes) {
+    let a = 0;
+    let b = 0;
+    for (let i = 1; i < n; i++) {
+      if (iso(i, 0).x < iso(a, 0).x) a = i;
+      if (iso(i, 0).x > iso(b, 0).x) b = i;
+    }
+    ctx.strokeStyle = p.borde;
+    ctx.lineWidth = pelo;
+    ctx.beginPath();
+    for (const i of [a, b]) {
+      const s0 = iso(i, p.z0);
+      const s1 = iso(i, p.z1);
+      ctx.moveTo(s0.x, s0.y);
+      ctx.lineTo(s1.x, s1.y);
+    }
+    ctx.stroke();
   }
   // Tapa
   const tapa = p.pts.map((_, i) => iso(i, p.z1));
@@ -609,7 +677,7 @@ export function dibujarIsometrico(ctx: CanvasRenderingContext2D, d: DatosCroquis
     let piso: Elemento | null = null;
     if (el.tipo === 'area') piso = { ...el, nombre: '', mostrarM2: false };
     else if (el.tipo === 'acceso') piso = { ...el, texto: '' };
-    else if (el.tipo === 'mueble') piso = alturaMueble(el.clave) <= 0.05 ? { ...el, etiqueta: '' } : null;
+    else if (el.tipo === 'mueble') piso = alturaMueble(el) <= 0.05 ? { ...el, etiqueta: '' } : null;
     else if (el.tipo === 'puerta') piso = el;
     else if (el.tipo === 'ventana') piso = enMuro.has(el.id) ? null : el;
     else if (el.tipo === 'linea' || el.tipo === 'trazo' || el.tipo === 'cota') piso = el;
@@ -619,13 +687,13 @@ export function dibujarIsometrico(ctx: CanvasRenderingContext2D, d: DatosCroquis
 
   // 2. Volúmenes, de atrás hacia adelante
   const prismas = prismasMuros(muros, aberturas, iso);
-  for (const el of todos) if (el.tipo === 'mueble' && alturaMueble(el.clave) > 0.05) prismas.push(...prismasMueble(el));
+  for (const el of todos) if (el.tipo === 'mueble' && alturaMueble(el) > 0.05) prismas.push(...prismasMueble(el));
   for (const p of prismas) {
     const c = p.pts.reduce((s, q) => ({ x: s.x + q.x / p.pts.length, y: s.y + q.y / p.pts.length }), { x: 0, y: 0 });
     const r = girar(c, g);
     p.prof = r.x + r.y;
   }
-  prismas.sort((a, b) => a.prof - b.prof || a.z0 - b.z0);
+  ordenarPrismas(prismas, g);
   const frontales = iso.transparencia > 0 ? prismas.filter((p) => (p.frontal = esFrontal(p, muros, g))) : [];
   for (const p of prismas) if (!p.frontal) dibujarPrisma(ctx, p, g, pelo);
   if (frontales.length) {
@@ -714,7 +782,7 @@ export function dibujarIsometrico(ctx: CanvasRenderingContext2D, d: DatosCroquis
         texto = r.lineas.join('\n');
         tam = r.tam;
       }
-      const z = alturaMueble(el.clave);
+      const z = alturaMueble(el);
       textoMundo(ctx, texto, aIso(el.p, z > 0.05 ? z : 0, g), tam, '#111827', { alinear: 'center', base: 'middle', halo: true });
     } else if (el.tipo === 'acceso' && el.texto) {
       const ang = Math.atan2(el.b.y - el.a.y, el.b.x - el.a.x);

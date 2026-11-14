@@ -28,7 +28,7 @@ Otros atajos: `Ctrl+Z` / `Ctrl+Y` deshacer y rehacer, `Supr` borrar, `Ctrl+D` du
 
 ## Vista isométrica
 
-El selector **Plano / Isométrico** de la barra superior muestra el croquis en 3D: los muros se levantan a una altura (2.5 m por defecto; en el panel hay atajos *Completa*, *Media* 1.2 m y *Baja* 0.4 m para ver el interior), las puertas y ventanas quedan como huecos en el muro y el mobiliario como volúmenes con su símbolo encima. La **transparencia de muros frontales** (0 a 100 %) aclara los muros exteriores del lado de la vista, dejando su contorno y su franja en el piso, para ver el interior sin bajar la altura. Con **Medidas** activado, el largo de cada muro aparece sobre el muro, en su mismo plano. Los botones **Girar** cambian el lado desde el que se ve. Es solo una vista: para editar se vuelve a **Plano** (o `Esc`).
+El selector **Plano / Isométrico** de la barra superior muestra el croquis en 3D: los muros se levantan a una altura (2.5 m por defecto; en el panel hay atajos *Completa*, *Media* 1.2 m y *Baja* 0.4 m para ver el interior), las puertas y ventanas quedan como huecos en el muro y el mobiliario con un modelo sencillo de cada mueble (mesas con patas, sillas con respaldo, camas con colchón y barandales, anaqueles con entrepaños, tarjas con llave, botes y extintores cilíndricos…). La **transparencia de muros frontales** (0 a 100 %) aclara los muros exteriores del lado de la vista, dejando su contorno y su franja en el piso, para ver el interior sin bajar la altura. Con **Medidas** activado, el largo de cada muro aparece sobre el muro, en su mismo plano. Los botones **Girar** cambian el lado desde el que se ve. Es solo una vista: para editar se vuelve a **Plano** (o `Esc`).
 
 La vista elegida se guarda con el croquis (`datos.opciones.vista`, `alturaMuros`, `giroIso`, `transparenciaFrontal`), así que *Descargar PNG*, *Guardar croquis* y `Croquis.imagen()` entregan la imagen en esa vista. Para forzar una: `Croquis.imagen(datos, { vista: 'plano' })` o `{ vista: 'isometrico' }`. La imagen isométrica no lleva barra de escala.
 
@@ -73,7 +73,8 @@ npm run build:lib  # solo la librería
 ```
 src/modelo.ts      tipos de elementos (muro, puerta, área, mueble…) en metros
 src/render.ts      dibujo de la escena en un <canvas>
-src/isometrico.ts  vista isométrica (muros levantados, huecos de puertas y ventanas, muebles en volumen)
+src/isometrico.ts  vista isométrica (muros levantados, huecos de puertas y ventanas, orden de dibujo)
+src/muebles3d.ts   modelos 3D de cada mueble del catálogo, armados por piezas
 src/catalogo.ts    mobiliario y sus símbolos
 src/elementos.ts   cajas, detección de clic y movimiento de elementos
 src/editor.ts      interfaz, herramientas, panel de propiedades, historial
