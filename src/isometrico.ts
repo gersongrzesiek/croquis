@@ -370,10 +370,17 @@ function prismasMuros(muros: Muro[], aberturas: Abertura[], o: OpcionesIso): Pri
  * Dibuja una superficie libre (caras planas en 3D): de atrás hacia adelante por la profundidad de
  * cada cara, con la luz según hacia dónde mira. Sirve para piezas curvas en un plano vertical.
  */
-function dibujarMalla(ctx: CanvasRenderingContext2D, caras: CaraMalla[], mat: Material, borde: string, giro: number, pelo: number) {
+function dibujarMalla(ctx: CanvasRenderingContext2D, caras: CaraMalla[], matPieza: Material, borde: string, giro: number, pelo: number) {
   const orden = caras
     .map((c) => {
       const r = c.pts.map((q) => ({ ...girar(q.p, giro), z: q.z }));
+      const prof = r.reduce((s, q) => s + q.x + q.y + q.z, 0) / r.length;
+      if (c.n) {
+        // Con normal hacia afuera: las caras que miran hacia atrás no se ven
+        const g = girar({ x: c.n.x, y: c.n.y }, giro);
+        const l = Math.hypot(g.x, g.y, c.n.z) || 1;
+        return { c, nx: g.x / l, ny: g.y / l, nz: c.n.z / l, prof, oculta: g.x + g.y + c.n.z <= 0 };
+      }
       // Normal (método de Newell), orientada hacia el observador
       let nx = 0;
       let ny = 0;
@@ -387,14 +394,15 @@ function dibujarMalla(ctx: CanvasRenderingContext2D, caras: CaraMalla[], mat: Ma
       }
       const l = Math.hypot(nx, ny, nz) || 1;
       const k = nx + ny + nz < 0 ? -1 / l : 1 / l;
-      const prof = r.reduce((s, q) => s + q.x + q.y + q.z, 0) / r.length;
-      return { c, nx: nx * k, ny: ny * k, nz: nz * k, prof };
+      return { c, nx: nx * k, ny: ny * k, nz: nz * k, prof, oculta: false };
     })
+    .filter((x) => !x.oculta)
     .sort((a, b) => a.prof - b.prof);
   ctx.save();
   ctx.lineJoin = 'round';
   ctx.lineWidth = pelo;
   for (const { c, nx, ny, nz } of orden) {
+    const mat = c.mat ?? matPieza;
     const h = Math.hypot(nx, ny) || 1;
     const lado = mat.luzLados[0] + (mat.luzLados[1] - mat.luzLados[0]) * ((nx / h - ny / h + 1) / 2);
     const luz = lado * (1 - Math.abs(nz)) + (nz > 0 ? mat.luzTapa : mat.luzLados[0]) * Math.abs(nz);
@@ -405,8 +413,16 @@ function dibujarMalla(ctx: CanvasRenderingContext2D, caras: CaraMalla[], mat: Ma
     ctx.closePath();
     ctx.fillStyle = relleno;
     ctx.strokeStyle = relleno;
+    ctx.lineWidth = pelo;
     ctx.fill();
     ctx.stroke();
+    if (c.trama) {
+      // Retícula suave, como la malla de un modelo de referencia
+      ctx.strokeStyle = aclarar(mat.color, luz - 0.22);
+      ctx.lineWidth = pelo * 0.45;
+      ctx.stroke();
+      ctx.lineWidth = pelo;
+    }
     ctx.strokeStyle = borde;
     ctx.beginPath();
     for (let i = 0; i < s.length; i++) {

@@ -28,6 +28,7 @@ export const MAT = {
   cristal: { color: '#7fb4e0', luzLados: [0.5, 0.65], luzTapa: 0.45 },
   piel: { color: '#c99a74', luzLados: [0.1, 0.3], luzTapa: 0.4 },
   bota: { color: '#60a5fa', luzLados: [0.15, 0.4], luzTapa: 0.5 },
+  maniqui: { color: '#8f949c', luzLados: [0.02, 0.5], luzTapa: 0.62 },
 } satisfies Record<string, Material>;
 
 export interface Pieza {
@@ -53,6 +54,12 @@ export interface CaraMalla {
   pts: { p: Pt; z: number }[];
   /** Qué lados llevan línea de borde (por omisión, todos). */
   bordes?: boolean[];
+  /** Normal hacia afuera (en coordenadas del plano): con ella se ocultan las caras de atrás. */
+  n?: { x: number; y: number; z: number };
+  /** Material propio de la cara (si no, el de la pieza). */
+  mat?: Material;
+  /** Dibuja la retícula de la malla con un tono más oscuro (aspecto de maniquí). */
+  trama?: boolean;
 }
 
 /** Punto de salida del haz de rayos X (centro de la cara frontal del tubo), en el plano y su altura. */
@@ -301,36 +308,11 @@ export function modeloMueble(el: Mueble): Pieza[] {
       caja(0, 0, 1, 0.16, 0.72, 0.9, MAT.tapiz);
       break;
     case 'transfer': {
-      // Barrera fija de acero inoxidable (para sentarse) y una persona a horcajadas cambiándose las botas:
-      // un pie en el piso de un lado y el otro levantado del lado limpio, con las manos en la bota.
-      const zs = 0.5;
-      cajaM(-W / 2, -D / 2, W / 2, D / 2, 0, zs - 0.03, MAT.metal);
-      cajaM(-W / 2 - 0.01, -D / 2 - 0.01, W / 2 + 0.01, D / 2 + 0.01, zs - 0.03, zs, MAT.metal);
-      const cx = -0.12;
-      const ropa = MAT.negro;
-      // Pierna en el piso (lado y negativo)
-      cajaM(cx - 0.02, -0.26, cx + 0.16, -0.12, zs - 0.08, zs + 0.06, ropa);
-      cajaM(cx + 0.06, -0.27, cx + 0.17, -0.15, 0.08, zs - 0.08, ropa);
-      cajaM(cx + 0.04, -0.29, cx + 0.27, -0.14, 0, 0.09, MAT.bota);
-      // Pierna levantada (lado limpio): muslo hacia adelante, espinilla hacia abajo y la bota en el aire
-      cajaM(cx - 0.02, 0.12, cx + 0.36, 0.25, zs, zs + 0.13, ropa);
-      cajaM(cx + 0.28, 0.13, cx + 0.39, 0.25, zs - 0.26, zs, ropa);
-      cajaM(cx + 0.26, 0.12, cx + 0.5, 0.26, zs - 0.34, zs - 0.24, MAT.bota);
-      // Cadera y torso, un poco inclinado hacia la bota
-      cajaM(cx - 0.12, -0.15, cx + 0.06, 0.15, zs, zs + 0.14, ropa);
-      cajaM(cx - 0.1, -0.17, cx + 0.08, 0.17, zs + 0.14, zs + 0.34, ropa);
-      cajaM(cx - 0.04, -0.17, cx + 0.14, 0.17, zs + 0.34, zs + 0.52, ropa);
-      // Brazos: del hombro hacia la bota levantada
-      cajaM(cx + 0.06, -0.21, cx + 0.14, -0.13, zs + 0.3, zs + 0.5, ropa);
-      cajaM(cx + 0.12, -0.17, cx + 0.3, -0.09, zs + 0.18, zs + 0.3, MAT.piel);
-      cajaM(cx + 0.26, -0.11, cx + 0.34, 0.12, zs - 0.18, zs + 0.2, MAT.piel);
-      cajaM(cx + 0.06, 0.17, cx + 0.14, 0.24, zs + 0.3, zs + 0.5, ropa);
-      cajaM(cx + 0.12, 0.18, cx + 0.42, 0.26, zs - 0.18, zs + 0.3, MAT.piel);
-      // Cuello, cabeza (con cubrebocas) y gorro
-      cil(cx + 0.06, 0, 0.045, 0.045, zs + 0.52, zs + 0.58, MAT.piel, 10);
-      cil(cx + 0.08, 0, 0.1, 0.09, zs + 0.58, zs + 0.78, MAT.piel, 14);
-      cajaM(cx + 0.15, -0.06, cx + 0.19, 0.06, zs + 0.6, zs + 0.68, MAT.bota);
-      cil(cx + 0.07, 0, 0.105, 0.095, zs + 0.74, zs + 0.82, MAT.rojo, 14);
+      // Barrera fija de acero inoxidable (para sentarse) y un maniquí liso sentado a horcajadas
+      // cambiándose las botas: un pie en el piso y el otro levantado del lado limpio, con las manos en la bota.
+      // Todo va en una sola malla para que las caras de la persona y de la barrera se ordenen entre sí.
+      const malla = mallaTransfer(W, D, mundo);
+      piezas.push({ pts: [mundo(-W / 2, -0.48), mundo(W / 2, -0.48), mundo(W / 2, 0.48), mundo(-W / 2, 0.48)], z0: 0, z1: 1.42, mat: MAT.maniqui, malla });
       break;
     }
     case 'mesa-quirurgica': {
@@ -635,4 +617,157 @@ export function modeloMueble(el: Mueble): Pieza[] {
 /** Altura del mueble en la vista isométrica (0 si va plano en el piso). */
 export function alturaModelo(el: Mueble): number {
   return modeloMueble(el).reduce((h, p) => Math.max(h, p.z1), 0);
+}
+
+// ───────────────────────── Maniquí del transfer ─────────────────────────
+
+type V3 = [number, number, number];
+const suma = (a: V3, b: V3): V3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+const resta = (a: V3, b: V3): V3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const por = (a: V3, k: number): V3 => [a[0] * k, a[1] * k, a[2] * k];
+const cruz = (a: V3, b: V3): V3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const unit = (a: V3): V3 => por(a, 1 / (Math.hypot(a[0], a[1], a[2]) || 1));
+
+/**
+ * Barrera del transfer y maniquí liso (cuerpo de tubos y elipsoides con normales, como un modelo de
+ * referencia gris) sentado sobre ella poniéndose una bota. Coordenadas locales: x a lo largo de la
+ * barrera, y a lo ancho (lado limpio en y positiva), z hacia arriba.
+ */
+function mallaTransfer(W: number, D: number, mundo: (x: number, y: number) => Pt): CaraMalla[] {
+  const caras: CaraMalla[] = [];
+  const P = (v: V3) => ({ p: mundo(v[0], v[1]), z: v[2] });
+  const N = (v: V3) => {
+    const o = mundo(0, 0);
+    const q = mundo(v[0], v[1]);
+    return { x: q.x - o.x, y: q.y - o.y, z: v[2] };
+  };
+  const cara = (vs: V3[], n: V3, mat: Material, bordes?: boolean[], trama = true) =>
+    caras.push({ pts: vs.map(P), n: N(unit(n)), mat, bordes: bordes ?? vs.map(() => false), trama });
+
+  /** Caja con sus caras partidas en cuadros pequeños (para que se ordenen bien con la figura). */
+  const cajaMalla = (a: V3, b: V3, mat: Material, paso = 0.12) => {
+    const ejes: [number, number, number][] = [
+      [0, 1, 2],
+      [1, 2, 0],
+      [2, 0, 1],
+    ];
+    for (const [i, j, k] of ejes)
+      for (const lado of [0, 1]) {
+        const nk = lado ? b[k] : a[k];
+        const n: V3 = [0, 0, 0];
+        n[k] = lado ? 1 : -1;
+        const ni = Math.max(1, Math.ceil((b[i] - a[i]) / paso));
+        const nj = Math.max(1, Math.ceil((b[j] - a[j]) / paso));
+        for (let u = 0; u < ni; u++)
+          for (let v = 0; v < nj; v++) {
+            const pt = (uu: number, vv: number): V3 => {
+              const r: V3 = [0, 0, 0];
+              r[i] = a[i] + ((b[i] - a[i]) * uu) / ni;
+              r[j] = a[j] + ((b[j] - a[j]) * vv) / nj;
+              r[k] = nk;
+              return r;
+            };
+            cara([pt(u, v), pt(u + 1, v), pt(u + 1, v + 1), pt(u, v + 1)], n, mat, [v === 0, u === ni - 1, v === nj - 1, u === 0], false);
+          }
+      }
+  };
+
+  /** Tubo de sección elíptica entre dos puntos, con radios que cambian de un extremo al otro y tapas. */
+  const tubo = (a: V3, b: V3, ra: [number, number], rb: [number, number], mat: Material, lados = 10, ref: V3 = [0, 1, 0]) => {
+    const d = unit(resta(b, a));
+    let u = cruz(d, ref);
+    if (Math.hypot(...u) < 1e-6) u = cruz(d, [1, 0, 0]);
+    u = unit(u);
+    const w = cruz(d, u);
+    const anillo = (c: V3, r: [number, number]) =>
+      Array.from({ length: lados }, (_, i) => {
+        const t = (i / lados) * Math.PI * 2;
+        return suma(c, suma(por(u, Math.cos(t) * r[0]), por(w, Math.sin(t) * r[1])));
+      });
+    const A = anillo(a, ra);
+    const B = anillo(b, rb);
+    for (let i = 0; i < lados; i++) {
+      const j = (i + 1) % lados;
+      const t = ((i + 0.5) / lados) * Math.PI * 2;
+      const n = suma(por(u, Math.cos(t) / ra[0]), por(w, Math.sin(t) / ra[1]));
+      cara([A[i], A[j], B[j], B[i]], n, mat);
+    }
+    cara([...A].reverse(), por(d, -1), mat);
+    cara(B, d, mat);
+  };
+
+  /** Elipsoide (radios en x, y, z locales). */
+  const elipsoide = (c: V3, r: V3, mat: Material, nu = 12, nv = 8) => {
+    const pt = (i: number, j: number): V3 => {
+      const t = (i / nu) * Math.PI * 2;
+      const f = -Math.PI / 2 + (j / nv) * Math.PI;
+      return [c[0] + r[0] * Math.cos(f) * Math.cos(t), c[1] + r[1] * Math.cos(f) * Math.sin(t), c[2] + r[2] * Math.sin(f)];
+    };
+    for (let i = 0; i < nu; i++)
+      for (let j = 0; j < nv; j++) {
+        const t = ((i + 0.5) / nu) * Math.PI * 2;
+        const f = -Math.PI / 2 + ((j + 0.5) / nv) * Math.PI;
+        const n: V3 = [(Math.cos(f) * Math.cos(t)) / r[0], (Math.cos(f) * Math.sin(t)) / r[1], Math.sin(f) / r[2]];
+        const q = [pt(i, j), pt(i + 1, j), pt(i + 1, j + 1), pt(i, j + 1)];
+        cara(j === 0 ? [q[0], q[2], q[3]] : j === nv - 1 ? [q[0], q[1], q[2]] : q, n, mat);
+      }
+  };
+  const bola = (c: V3, r: number, mat: Material) => elipsoide(c, [r, r, r], mat, 10, 6);
+
+  // Barrera: cuerpo y cubierta de acero
+  const zs = 0.5;
+  cajaMalla([-W / 2, -D / 2, 0], [W / 2, D / 2, zs - 0.03], MAT.metal);
+  cajaMalla([-W / 2 - 0.01, -D / 2 - 0.01, zs - 0.03], [W / 2 + 0.01, D / 2 + 0.01, zs], MAT.metal);
+
+  const piel = MAT.maniqui;
+  const bota = MAT.bota;
+  const cx = -0.14;
+  // Pelvis sentada sobre la cubierta y torso inclinado hacia adelante (hacia la bota)
+  const pelvis: V3 = [cx, 0, zs + 0.1];
+  const pecho: V3 = [cx + 0.16, 0, zs + 0.46];
+  elipsoide([cx, 0, zs + 0.09], [0.13, 0.17, 0.1], piel);
+  tubo([cx, 0, zs + 0.06], [cx + 0.06, 0, zs + 0.3], [0.15, 0.11], [0.13, 0.1], piel, 12, [1, 0, 0]);
+  tubo([cx + 0.06, 0, zs + 0.3], pecho, [0.13, 0.1], [0.18, 0.11], piel, 12, [1, 0, 0]);
+  elipsoide(suma(pecho, [0, 0, 0.02]), [0.1, 0.18, 0.07], piel);
+  // Cuello y cabeza mirando hacia la bota
+  const cuello: V3 = [cx + 0.2, 0, zs + 0.55];
+  tubo(pecho, cuello, [0.05, 0.05], [0.045, 0.045], piel, 8);
+  elipsoide([cx + 0.26, 0.04, zs + 0.65], [0.1, 0.085, 0.115], piel);
+  elipsoide([cx + 0.32, 0.045, zs + 0.61], [0.045, 0.06, 0.05], piel, 8, 6);
+  // Hombros y brazos: ambas manos sostienen la bota del pie levantado
+  const pie: V3 = [cx + 0.44, 0.3, zs + 0.2];
+  const hombroI: V3 = [cx + 0.16, -0.19, zs + 0.45];
+  const hombroD: V3 = [cx + 0.16, 0.19, zs + 0.45];
+  const codoI: V3 = [cx + 0.33, -0.08, zs + 0.3];
+  const codoD: V3 = [cx + 0.3, 0.34, zs + 0.34];
+  const manoI: V3 = suma(pie, [-0.05, -0.08, 0.04]);
+  const manoD: V3 = suma(pie, [-0.02, 0.07, 0.07]);
+  for (const [h, c, m] of [
+    [hombroI, codoI, manoI],
+    [hombroD, codoD, manoD],
+  ] as [V3, V3, V3][]) {
+    bola(h, 0.055, piel);
+    tubo(h, c, [0.047, 0.047], [0.037, 0.037], piel);
+    bola(c, 0.037, piel);
+    tubo(c, m, [0.035, 0.035], [0.028, 0.028], piel);
+    elipsoide(m, [0.04, 0.03, 0.045], piel, 8, 6);
+  }
+  // Pierna apoyada (lado y negativo): ya con la bota puesta
+  const caderaI: V3 = [cx + 0.02, -0.1, zs + 0.09];
+  const rodillaI: V3 = [cx + 0.36, -0.27, zs + 0.03];
+  const tobilloI: V3 = [cx + 0.4, -0.3, 0.09];
+  tubo(caderaI, rodillaI, [0.075, 0.075], [0.052, 0.052], piel);
+  bola(rodillaI, 0.052, piel);
+  tubo(rodillaI, tobilloI, [0.05, 0.05], [0.035, 0.035], piel);
+  tubo([tobilloI[0] - 0.04, tobilloI[1], 0.02], [tobilloI[0] + 0.2, tobilloI[1] - 0.01, 0.02], [0.05, 0.035], [0.045, 0.03], bota, 10, [0, 0, 1]);
+  bola([tobilloI[0], tobilloI[1], 0.07], 0.05, bota);
+  // Pierna levantada (lado limpio): rodilla arriba y el pie con la bota a medio poner, en las manos
+  const caderaD: V3 = [cx + 0.02, 0.1, zs + 0.09];
+  const rodillaD: V3 = [cx + 0.3, 0.33, zs + 0.5];
+  tubo(caderaD, rodillaD, [0.075, 0.075], [0.052, 0.052], piel);
+  bola(rodillaD, 0.052, piel);
+  tubo(rodillaD, pie, [0.05, 0.05], [0.035, 0.035], piel);
+  tubo(suma(pie, [-0.03, 0, -0.01]), suma(pie, [0.17, 0.01, -0.07]), [0.052, 0.04], [0.045, 0.032], bota, 10, [0, 0, 1]);
+  bola(pie, 0.05, bota);
+  return caras;
 }
