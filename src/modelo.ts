@@ -62,6 +62,14 @@ export interface Mueble extends Base {
   etiqueta: string;
   /** Acomoda la etiqueta en varias líneas y achica la letra para que quepa dentro del mueble. */
   ajustarEtq?: boolean;
+  /** Equipo de rayos X: muestra el haz de radiación (amarillo). */
+  haz?: boolean;
+  /** Lado del campo del haz al llegar al piso, en metros (0.5 por defecto). */
+  hazAmplitud?: number;
+  /** Transparencia del haz en % (60 por defecto). */
+  hazTransparencia?: number;
+  /** Alcance del haz desde el frente del tubo, en metros. Sin valor, llega solo hasta el primer muro o mueble alto. */
+  hazDistancia?: number;
 }
 export interface Texto extends Base {
   tipo: 'texto';
@@ -100,7 +108,21 @@ export interface Trazo extends Base {
   grosor: number;
 }
 
-export type Elemento = Muro | Abertura | Area | Mueble | Texto | Acceso | Cota | Linea | Trazo;
+export type PuntoCardinal = 'N' | 'S' | 'E' | 'O';
+
+/** Indicador de orientación: una letra fija (N, S, E u O) con una flecha roja que apunta hacia ese punto cardinal. */
+export interface Norte extends Base {
+  tipo: 'norte';
+  p: Pt;
+  /** Hacia dónde apunta la flecha, en radianes (0 = hacia arriba del plano, sentido horario). */
+  ang: number;
+  /** Punto cardinal que indica la flecha (N por defecto). */
+  punto?: PuntoCardinal;
+  /** Alto de la N, en metros. */
+  tam: number;
+}
+
+export type Elemento = Muro | Abertura | Area | Mueble | Texto | Acceso | Cota | Linea | Trazo | Norte;
 export type ConDosPuntos = Muro | Acceso | Cota | Linea;
 
 export interface DatosCroquis {
@@ -109,6 +131,18 @@ export interface DatosCroquis {
   opciones: {
     /** Muestra la longitud de cada muro. */
     medidasMuros: boolean;
+    /** Vista con la que se muestra y exporta el croquis (por defecto el plano). */
+    vista?: 'plano' | 'isometrico';
+    /** Altura de los muros en la vista isométrica, en metros (2.5 por defecto). */
+    alturaMuros?: number;
+    /** Giro de la vista isométrica en cuartos de vuelta (0 a 3). */
+    giroIso?: number;
+    /** Transparencia de los muros frontales en la vista isométrica, en % (0 = opacos). */
+    transparenciaFrontal?: number;
+    /** Transparencia de los muros intermedios en la vista isométrica, en % (0 por defecto). */
+    transparenciaIntermedia?: number;
+    /** Inclinación de la vista isométrica, en grados sobre el horizonte (35.26 por defecto). */
+    elevacionIso?: number;
   };
 }
 

@@ -41,6 +41,8 @@ export const CATALOGO: ItemCatalogo[] = [
   it('camilla', 'Carro camilla', 0.7, 1.9),
   it('mesa-exploracion', 'Mesa de exploración', 0.7, 1.8),
   it('mesa-quirurgica', 'Mesa quirúrgica', 0.6, 2.0),
+  it('transfer', 'Transfer / cambio de botas', 0.9, 0.4),
+  it('transfer-barrera', 'Transfer (solo barrera)', 0.9, 0.4),
   it('lampara-quir', 'Lámpara quirúrgica', 0.9, 0.9),
   it('anestesia', 'Equipo de anestesia', 0.7, 0.6),
   it('mesa-mayo', 'Mesa Mayo', 0.6, 0.4),
@@ -57,6 +59,7 @@ export const CATALOGO: ItemCatalogo[] = [
   // Rayos X (NOM-229-SSA1-2002 y apéndice C de NOM-016-SSA3-2012)
   it('mesa-rx', 'Mesa con bucky', 0.8, 2.2),
   it('tubo-rx', 'Soporte de tubo de RX', 0.6, 0.6),
+  it('arco-c', 'Arco en C', 0.8, 2.0),
   it('bucky-vertical', 'Bucky vertical', 0.7, 0.35),
   it('consola', 'Consola de control', 1.0, 0.5),
   it('mampara', 'Mampara plomada', 1.0, 0.15),
@@ -95,19 +98,21 @@ export const CATALOGO: ItemCatalogo[] = [
   it('bote-pedal', 'Bote con tapa y pedal', 0.45, 0.45),
   it('trampa-grasa', 'Trampa de grasa', 0.6, 0.4),
   it('coladera', 'Coladera', 0.25, 0.25),
+  it('rejilla-sup', 'Rejilla de ventilación superior', 0.6, 0.06),
+  it('rejilla-inf', 'Rejilla de ventilación inferior', 0.6, 0.06),
 ];
 
 export const CATEGORIAS: Categoria[] = [
   {
     id: 'general',
     nombre: 'General',
-    claves: ['mesa', 'mesa-trabajo', 'silla', 'escritorio', 'anaquel', 'mostrador', 'refrigerador', 'congelador', 'estufa', 'tarja', 'lavabo', 'wc', 'regadera', 'tarima', 'caja', 'extintor', 'botiquin', 'bote'],
+    claves: ['mesa', 'mesa-trabajo', 'silla', 'escritorio', 'anaquel', 'mostrador', 'refrigerador', 'congelador', 'estufa', 'tarja', 'lavabo', 'wc', 'regadera', 'tarima', 'caja', 'extintor', 'botiquin', 'bote', 'rejilla-sup', 'rejilla-inf'],
   },
   {
     id: 'hospitalario',
     nombre: 'Hospitalario',
     norma: 'NOM-016-SSA3-2012',
-    claves: ['cama-hosp', 'camilla', 'mesa-exploracion', 'mesa-quirurgica', 'lampara-quir', 'anestesia', 'mesa-mayo', 'mesa-rinon', 'mesa-pasteur', 'carro-rojo', 'carro-curacion', 'portasueros', 'lavabo-cirujano', 'lavabo', 'asiento-giratorio', 'banqueta', 'negatoscopio', 'bote-rpbi', 'bote'],
+    claves: ['cama-hosp', 'camilla', 'mesa-exploracion', 'mesa-quirurgica', 'transfer', 'transfer-barrera', 'lampara-quir', 'anestesia', 'mesa-mayo', 'mesa-rinon', 'mesa-pasteur', 'carro-rojo', 'carro-curacion', 'portasueros', 'lavabo-cirujano', 'lavabo', 'asiento-giratorio', 'banqueta', 'negatoscopio', 'bote-rpbi', 'bote', 'rejilla-sup', 'rejilla-inf'],
   },
   {
     id: 'plagas',
@@ -119,15 +124,18 @@ export const CATEGORIAS: Categoria[] = [
     id: 'rayosx',
     nombre: 'Rayos X',
     norma: 'NOM-229-SSA1-2002',
-    claves: ['mesa-rx', 'tubo-rx', 'bucky-vertical', 'consola', 'mampara', 'mandiles', 'mastografo', 'panoramico', 'revelador', 'mesa-chasis', 'lampara-seg', 'luz-roja', 'senal-rad', 'vestidor', 'negatoscopio', 'banqueta', 'portasueros', 'bote-rpbi'],
+    claves: ['mesa-rx', 'tubo-rx', 'arco-c', 'bucky-vertical', 'consola', 'mampara', 'mandiles', 'mastografo', 'panoramico', 'revelador', 'mesa-chasis', 'lampara-seg', 'luz-roja', 'senal-rad', 'vestidor', 'negatoscopio', 'banqueta', 'portasueros', 'bote-rpbi'],
   },
   {
     id: 'alimentos',
     nombre: 'Alimentos',
     norma: 'NOM-251-SSA1-2009',
-    claves: ['mesa-inox', 'tarja-doble', 'lavamanos', 'estufa-ind', 'horno', 'freidora', 'campana', 'refrigerador', 'congelador', 'camara-fria', 'anaquel', 'tarima', 'bascula', 'bote-pedal', 'trampa-grasa', 'coladera'],
+    claves: ['mesa-inox', 'tarja-doble', 'lavamanos', 'estufa-ind', 'horno', 'freidora', 'campana', 'refrigerador', 'congelador', 'camara-fria', 'anaquel', 'tarima', 'bascula', 'bote-pedal', 'trampa-grasa', 'coladera', 'rejilla-sup', 'rejilla-inf'],
   },
 ];
+
+/** Elementos que solo se colocan sobre un muro, pegados a su cara. */
+export const DE_MURO = new Set(['rejilla-sup', 'rejilla-inf']);
 
 export const itemPorClave = (clave: string) => CATALOGO.find((i) => i.clave === clave);
 
@@ -139,6 +147,14 @@ export const itemsDeCategoria = (id: string) =>
  * `lw` es el grosor de línea en las mismas unidades.
  */
 export function dibujarSimbolo(ctx: CanvasRenderingContext2D, clave: string, w: number, h: number, color: string, lw: number) {
+  // Camas y mesas largas dibujadas más anchas que largas: el símbolo sigue el lado largo
+  if (w > h && ['cama-hosp', 'camilla', 'mesa-exploracion', 'mesa-quirurgica', 'mesa-rx'].includes(clave)) {
+    ctx.save();
+    ctx.rotate(Math.PI / 2);
+    dibujarSimbolo(ctx, clave, h, w, color, lw);
+    ctx.restore();
+    return;
+  }
   const x0 = -w / 2;
   const y0 = -h / 2;
   const m = Math.min(w, h);
@@ -340,6 +356,47 @@ export function dibujarSimbolo(ctx: CanvasRenderingContext2D, clave: string, w: 
       ctx.arc(X(0.75), Y(1), m * 0.12, 0, Math.PI);
       ctx.stroke();
       break;
+    case 'rejilla-sup':
+    case 'rejilla-inf': {
+      // Rejilla vista desde arriba: marco con lamas. La superior va punteada (queda arriba del corte).
+      if (clave === 'rejilla-sup') ctx.setLineDash([lw * 3, lw * 2]);
+      caja('#e5e7eb');
+      ctx.setLineDash([]);
+      ctx.lineWidth = lw * 0.6;
+      const n = Math.max(3, Math.round(w / 0.08));
+      for (let i = 1; i < n; i++) linea(X(i / n), y0, X(i / n), y0 + h);
+      ctx.lineWidth = lw;
+      break;
+    }
+    case 'transfer':
+    case 'transfer-barrera': {
+      // Barrera de acero de lado a lado del acceso, con una persona sentada encima cambiándose las botas
+      caja('#d1d5db');
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(x0, y0, w, h);
+      ctx.clip();
+      ctx.lineWidth = lw * 0.5;
+      for (let t = -h; t < w; t += m * 0.35) linea(x0 + t, y0 + h, x0 + t + h, y0);
+      ctx.restore();
+      ctx.lineWidth = lw;
+      if (clave === 'transfer-barrera') break;
+      // Botas (azules) a cada lado de la barrera: un pie en el piso y el otro pasando al lado limpio
+      for (const [bx, by] of [[0.02, -h / 2 - m * 0.12], [m * 0.3, h / 2 - m * 0.08]]) {
+        ctx.beginPath();
+        ctx.roundRect(bx, by, m * 0.45, m * 0.2, m * 0.08);
+        ctx.fillStyle = '#93c5fd';
+        ctx.fill();
+        ctx.stroke();
+      }
+      ctx.beginPath();
+      ctx.ellipse(0, 0, m * 0.2, m * 0.48, 0, 0, Math.PI * 2);
+      ctx.fillStyle = '#374151';
+      ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      circ(m * 0.05, 0, m * 0.16, '#ffffff');
+      break;
+    }
     case 'mesa-quirurgica':
       caja();
       lf(0, 0.18, 1, 0.18);
@@ -452,6 +509,15 @@ export function dibujarSimbolo(ctx: CanvasRenderingContext2D, clave: string, w: 
     case 'mandiles':
       caja();
       for (const fx of [0.2, 0.4, 0.6, 0.8]) circ(X(fx), 0, m * 0.25);
+      break;
+    case 'arco-c':
+      // Carro atrás (base, cuerpo) y el arco en C hacia el frente, con el tubo y el detector
+      rect(0.02, 0.02, 0.96, 0.18, '#e5e7eb');
+      rect(0.1, 0.04, 0.8, 0.32);
+      rect(0.44, 0.36, 0.12, 0.3);
+      rect(0.2, 0.65, 0.6, 0.25);
+      circ(0, Y(0.775), m * 0.22);
+      letra('C', color, 0, Y(0.2), 0.8);
       break;
     case 'mastografo':
       caja();

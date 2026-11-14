@@ -46,6 +46,8 @@ export function contorno(el: Elemento): Pt[] {
       const y0 = lado > 0 ? -g : -g - hoja;
       return esquinasCaja(el.p, el.ancho, el.grosor + hoja, el.ang, y0);
     }
+    case 'norte':
+      return esquinasCaja(el.p, el.tam * 1.7, el.tam * 1.7, 0);
     case 'texto': {
       const w = anchoTexto(el.texto, el.tam);
       const h = el.texto.split('\n').length * el.tam * 1.2;

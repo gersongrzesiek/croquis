@@ -1,9 +1,10 @@
-import { CATALOGO, CATEGORIAS, dibujarSimbolo, itemPorClave, itemsDeCategoria } from './catalogo';
+import { CATALOGO, CATEGORIAS, DE_MURO, dibujarSimbolo, itemPorClave, itemsDeCategoria, type ItemCatalogo } from './catalogo';
 import { cajaDe, cajaDeTodos, mover, posEtiqueta, puntoLocal, puntosClave, toca } from './elementos';
 import { inyectarEstilos } from './estilos';
 import { exportarPNG, type ImagenCroquis } from './exportar';
 import { aMundo, areaPoligono, dist, distBorde, enPoligono, formatoM, insetPoligono, lado, proyectar, recortarPoligono } from './geometria';
 import { ICONOS } from './iconos';
+import { ALTURA_MUROS, aIso, dibujarIsometrico, encuadreIso, opcionesIso, usarElevacion } from './isometrico';
 import {
   datosVacios,
   normalizarDatos,
@@ -16,12 +17,14 @@ import {
   type Elemento,
   type Mueble,
   type Muro,
+  type Norte,
+  type PuntoCardinal,
   type Patron,
   type Pt,
   type Texto,
   type Trazo,
 } from './modelo';
-import { dibujarEscena, type Vista } from './render';
+import { alcanceHaz, dibujarEscena, tieneHaz, type Vista } from './render';
 
 
 export type Herramienta =
@@ -40,7 +43,8 @@ export type Herramienta =
   | 'acceso'
   | 'cota'
   | 'linea'
-  | 'lapiz';
+  | 'lapiz'
+  | 'norte';
 
 /** `sep` deja un espacio después del botón para agrupar la barra. */
 const HERRAMIENTAS: { h: Herramienta; nombre: string; tecla: string; ayuda: string; sep?: true }[] = [
@@ -59,7 +63,8 @@ const HERRAMIENTAS: { h: Herramienta; nombre: string; tecla: string; ayuda: stri
   { h: 'acceso', nombre: 'Acceso', tecla: 'X', ayuda: 'Arrastra desde afuera hacia la entrada para marcar un acceso.' },
   { h: 'cota', nombre: 'Cota', tecla: 'K', ayuda: 'Arrastra entre dos puntos para acotar la distancia.', sep: true },
   { h: 'linea', nombre: 'Línea', tecla: 'L', ayuda: 'Arrastra para trazar una línea. Shift fija ángulos de 45°.' },
-  { h: 'lapiz', nombre: 'Lápiz', tecla: 'P', ayuda: 'Dibujo a mano alzada.' },
+  { h: 'lapiz', nombre: 'Lápiz', tecla: 'P', ayuda: 'Dibujo a mano alzada.', sep: true },
+  { h: 'norte', nombre: 'Orientación', tecla: 'O', ayuda: 'Clic para colocar la orientación (N, S, E u O) con su flecha. Gira la flecha con su manija o escribe el ángulo en el panel; la letra no gira. Solo hay una por croquis: un nuevo clic la mueve.' },
 ];
 
 /** Tinta azul de plano: selección, manijas y guías sobre el lienzo. */
@@ -100,8 +105,9 @@ export interface ResultadoCroquis extends ImagenCroquis {
 
 type Accion =
   | { k: 'pan'; sx: number; sy: number; ox: number; oy: number }
+  | { k: 'girarIso'; sx: number; sy: number; g0: number; e0: number; pivote: Pt; pantalla: Pt; movido: boolean }
   | { k: 'mover'; ultimo: Pt; previo: string; movido: boolean }
-  | { k: 'manija'; id: string; cual: 'a' | 'b' | 'rot' | 'tam' | 'etq' | 'medio' | number; previo: string; vinculados: { el: Muro; extremo: 'a' | 'b' }[] }
+  | { k: 'manija'; id: string; cual: 'a' | 'b' | 'rot' | 'tam' | 'etq' | 'medio' | 'haz' | number; previo: string; vinculados: { el: Muro; extremo: 'a' | 'b' }[] }
   | { k: 'marco'; a: Pt; b: Pt; sumar: boolean }
   | { k: 'nuevo'; el: ConDosPuntos; inicio: Pt }
   | { k: 'cuarto'; a: Pt; b: Pt }
@@ -136,6 +142,11 @@ export class Editor {
   private botonesHerr = new Map<Herramienta, HTMLButtonElement>();
   private btnDeshacer!: HTMLButtonElement;
   private btnRehacer!: HTMLButtonElement;
+  private botonesVista: { v: 'plano' | 'isometrico'; b: HTMLButtonElement }[] = [];
+  /** Interruptores que solo tienen sentido en el plano. */
+  private soloPlano: HTMLButtonElement[] = [];
+  /** Vista del plano guardada al pasar a la isométrica, para volver al mismo encuadre. */
+  private vistaPlano: Vista | null = null;
 
   datos: DatosCroquis;
   private vista: Vista = { escala: ESCALA_INICIAL, ox: 60, oy: 60 };
@@ -144,6 +155,11 @@ export class Editor {
   private historial: string[] = [];
   private rehechos: string[] = [];
   private accion: Accion | null = null;
+  /** Giro de la vista isométrica mientras se gira con el mouse (cuartos de vuelta, fraccionario). */
+  private giroVivo: number | null = null;
+  /** Inclinación de la vista isométrica mientras se arrastra (grados). */
+  private elevVivo: number | null = null;
+  private animGiro = 0;
   private poli: { tipo: 'muro' | 'area'; puntos: Pt[] } | null = null;
   private cursor: Pt | null = null;
   private medida = '';
@@ -155,6 +171,7 @@ export class Editor {
   private empalmar = true;
   private muebleClave = 'mesa';
   private categoria = 'general';
+  private busquedaMueble = '';
   private fantasmaAng = 0;
   private aberturaInvertir = false;
   private estilo = { color: '#111827', muro: '#374151', grosorMuro: 0.15, relleno: '#bfdbfe', patron: 'ninguno' as Patron, acceso: '#16a34a', fondoCuarto: '#ffffff', dobleHoja: false, chaflan: 1 };
@@ -191,6 +208,12 @@ export class Editor {
       this.encuadrar();
     }
     this.cambiarHerramienta(this.herr);
+    this.aplicarModoVista();
+  }
+
+  /** ¿Se está viendo el croquis en isométrico? En esa vista no se edita. */
+  get isometrico() {
+    return this.datos.opciones.vista === 'isometrico';
   }
 
   destruir() {
@@ -214,7 +237,17 @@ export class Editor {
       this.boton('Ajustar', 'Ver todo el croquis', () => this.encuadrar()),
       h('span', { className: 'crq-sep' }),
     );
-    const alternar = (txt: string, titulo: string, get: () => boolean, set: (v: boolean) => void) => {
+    const segmento = h('div', { className: 'crq-segmento', role: 'group', ariaLabel: 'Vista' });
+    for (const [v, txt, titulo] of [
+      ['plano', 'Plano', 'Ver y editar el plano'],
+      ['isometrico', 'Isométrico', 'Ver el croquis en 3D, con los muros levantados'],
+    ] as const) {
+      const b = this.boton(ICONOS[v] + txt, titulo, () => this.cambiarVista(v));
+      this.botonesVista.push({ v, b });
+      segmento.append(b);
+    }
+    barra.append(segmento, h('span', { className: 'crq-sep' }));
+    const alternar = (txt: string, titulo: string, get: () => boolean, set: (v: boolean) => void, enIso = false) => {
       const b = this.boton(txt, titulo, () => {
         set(!get());
         b.classList.toggle('crq-activo', get());
@@ -223,6 +256,7 @@ export class Editor {
       }, 'crq-alternar');
       b.classList.toggle('crq-activo', get());
       b.setAttribute('aria-pressed', String(get()));
+      if (!enIso) this.soloPlano.push(b);
       return b;
     };
     barra.append(
@@ -231,7 +265,7 @@ export class Editor {
       alternar('Medidas', 'Mostrar la medida de cada muro', () => this.datos.opciones.medidasMuros, (v) => {
         this.datos.opciones.medidasMuros = v;
         this.notificar();
-      }),
+      }, true),
     );
     barra.append(h('span', { className: 'crq-esp' }));
     if (this.o.modo === 'modal') {
@@ -292,6 +326,44 @@ export class Editor {
     return b;
   }
 
+  /** Cambia entre el plano (editable) y la vista isométrica (solo para ver y exportar). */
+  cambiarVista(v: 'plano' | 'isometrico') {
+    if ((v === 'isometrico') === this.isometrico) return;
+    this.terminarPoli();
+    this.accion = null;
+    this.medida = '';
+    this.seleccion.clear();
+    if (v === 'isometrico') {
+      this.vistaPlano = { ...this.vista };
+      this.datos.opciones.vista = 'isometrico';
+      this.encuadrar();
+    } else {
+      this.datos.opciones.vista = 'plano';
+      if (this.vistaPlano) this.vista = this.vistaPlano;
+      else this.encuadrar();
+    }
+    this.aplicarModoVista();
+    this.actualizarPanel();
+    this.notificar();
+  }
+
+  private aplicarModoVista() {
+    const iso = this.isometrico;
+    this.raiz.classList.toggle('crq-modo-iso', iso);
+    for (const { v, b } of this.botonesVista) {
+      const activo = (v === 'isometrico') === iso;
+      b.classList.toggle('crq-activo', activo);
+      b.setAttribute('aria-pressed', String(activo));
+    }
+    for (const b of this.soloPlano) b.disabled = iso;
+    for (const b of this.botonesHerr.values()) b.disabled = iso;
+    this.canvas.style.cursor = iso ? 'grab' : this.cursorHerramienta();
+  }
+
+  private cursorHerramienta() {
+    return this.herr === 'mano' ? 'grab' : this.herr === 'seleccionar' ? 'default' : 'crosshair';
+  }
+
   private cambiarHerramienta(t: Herramienta) {
     this.terminarPoli();
     this.herr = t;
@@ -299,21 +371,25 @@ export class Editor {
     this.medida = '';
     for (const [k, b] of this.botonesHerr) b.classList.toggle('crq-activo', k === t);
     if (t !== 'seleccionar') this.seleccion.clear();
-    this.canvas.style.cursor = t === 'mano' ? 'grab' : t === 'seleccionar' ? 'default' : 'crosshair';
+    this.canvas.style.cursor = this.isometrico ? 'grab' : this.cursorHerramienta();
     this.actualizarPanel();
     this.actualizarEstado();
     this.dibujar();
   }
 
   private actualizarEstado() {
+    this.zoomTxt.textContent = `${Math.round((this.vista.escala / ESCALA_INICIAL) * 100)}%`;
+    this.btnDeshacer.disabled = !this.historial.length;
+    this.btnRehacer.disabled = !this.rehechos.length;
+    if (this.isometrico) {
+      this.estado.innerHTML = '<b>Vista isométrica</b><span>Arrastra para mover la vista; con el botón derecho (o Shift) la giras y la inclinas. Vuelve a Plano para editar.</span>';
+      return;
+    }
     const info = HERRAMIENTAS.find((x) => x.h === this.herr)!;
     const partes = [`<b>${info.nombre}</b>`];
     if (this.medida) partes.push(`<span>Largo <b class="crq-cifra">${this.medida} m</b>, Enter para fijar</span>`);
     if (this.cursor) partes.push(`<span class="crq-cifra" style="margin-left:auto">x ${this.cursor.x.toFixed(2)}  y ${this.cursor.y.toFixed(2)} m</span>`);
     this.estado.innerHTML = partes.join('');
-    this.zoomTxt.textContent = `${Math.round((this.vista.escala / ESCALA_INICIAL) * 100)}%`;
-    this.btnDeshacer.disabled = !this.historial.length;
-    this.btnRehacer.disabled = !this.rehechos.length;
   }
 
   // ───────────────────────── Panel lateral ─────────────────────────
@@ -360,6 +436,7 @@ export class Editor {
     const p = this.panel;
     p.innerHTML = '';
     this.pendiente = null;
+    if (this.isometrico) return this.panelIsometrico();
     const sel = this.seleccionados();
     const cuarto = this.cuartoSeleccionado();
     if (cuarto) return this.panelPropiedades(cuarto);
@@ -372,33 +449,68 @@ export class Editor {
     }
     if (this.herr === 'mueble') {
       p.append(h('h3', { textContent: 'Mobiliario' }));
-      p.append(
-        this.campoSelect('Categoría', this.categoria, CATEGORIAS.map((c) => [c.id, c.nombre]), (v) => {
-          this.categoria = v;
-          const items = itemsDeCategoria(v);
-          if (!items.some((i) => i.clave === this.muebleClave)) this.muebleClave = items[0].clave;
-          this.actualizarPanel();
-        }, false),
-      );
-      const norma = CATEGORIAS.find((c) => c.id === this.categoria)?.norma;
-      if (norma) p.append(h('p', { textContent: `Mobiliario básico según ${norma}.` }));
+      // Buscador: filtra todo el catálogo sin rehacer el panel (así no se pierde el foco al escribir)
+      const buscar = h('input', { type: 'search', placeholder: 'Buscar mueble…', value: this.busquedaMueble, autocomplete: 'off' });
+      p.append(h('label', { className: 'crq-campo crq-buscar' }, [buscar]));
+      const selCat = this.campoSelect('Categoría', this.categoria, CATEGORIAS.map((c) => [c.id, c.nombre]), (v) => {
+        this.categoria = v;
+        this.busquedaMueble = '';
+        const items = itemsDeCategoria(v);
+        if (!items.some((i) => i.clave === this.muebleClave)) this.muebleClave = items[0].clave;
+        this.actualizarPanel();
+      }, false);
+      p.append(selCat);
+      const nota = h('p', {});
+      p.append(nota);
       const cat = h('div', { className: 'crq-catalogo' });
-      for (const it of itemsDeCategoria(this.categoria)) {
-        const c = h('canvas', { width: 128, height: 88 });
-        const g = c.getContext('2d')!;
-        const k = Math.min(100 / it.ancho, 64 / it.alto, 110);
-        g.translate(64, 44);
-        g.scale(k, k);
-        dibujarSimbolo(g, it.clave, it.ancho, it.alto, '#111827', 2.5 / k);
-        const b = h('button', { type: 'button', title: it.nombre, className: it.clave === this.muebleClave ? 'crq-activo' : '' }, [c, it.nombre]);
-        b.addEventListener('click', () => {
-          this.muebleClave = it.clave;
-          this.fantasmaAng = 0;
-          this.actualizarPanel();
-        });
-        cat.append(b);
-      }
       p.append(cat);
+      const sinAcentos = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+      const llenar = () => {
+        const q = sinAcentos(this.busquedaMueble.trim());
+        const norma = CATEGORIAS.find((c) => c.id === this.categoria)?.norma;
+        let items = itemsDeCategoria(this.categoria);
+        if (q) {
+          const palabras = q.split(/\s+/);
+          items = CATALOGO.filter((it) => palabras.every((w) => sinAcentos(it.nombre).includes(w)));
+          nota.textContent = items.length
+            ? `${items.length} ${items.length === 1 ? 'resultado' : 'resultados'} en todo el catálogo.`
+            : 'Ningún mueble coincide con la búsqueda.';
+        } else nota.textContent = norma ? `Mobiliario básico según ${norma}.` : '';
+        nota.hidden = !nota.textContent;
+        selCat.style.display = q ? 'none' : '';
+        cat.replaceChildren();
+        for (const it of items) {
+          const c = h('canvas', { width: 128, height: 88 });
+          const g = c.getContext('2d')!;
+          const k = Math.min(100 / it.ancho, 64 / it.alto, 110);
+          g.translate(64, 44);
+          g.scale(k, k);
+          dibujarSimbolo(g, it.clave, it.ancho, it.alto, '#111827', 2.5 / k);
+          const b = h('button', { type: 'button', title: it.nombre, className: it.clave === this.muebleClave ? 'crq-activo' : '' }, [c, it.nombre]);
+          b.addEventListener('click', () => {
+            this.muebleClave = it.clave;
+            this.fantasmaAng = 0;
+            cat.querySelectorAll('button').forEach((x) => x.classList.toggle('crq-activo', x === b));
+            this.dibujar();
+          });
+          cat.append(b);
+        }
+      };
+      buscar.addEventListener('input', () => {
+        this.busquedaMueble = buscar.value;
+        llenar();
+      });
+      buscar.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && buscar.value) {
+          e.stopPropagation();
+          buscar.value = '';
+          this.busquedaMueble = '';
+          llenar();
+        } else if (e.key === 'Enter') {
+          (cat.querySelector('button') as HTMLButtonElement | null)?.click();
+        }
+      });
+      llenar();
       return;
     }
     const info = HERRAMIENTAS.find((x) => x.h === this.herr)!;
@@ -416,7 +528,7 @@ export class Editor {
       p.append(this.campoSelect('Patrón', this.estilo.patron, PATRONES.map((x) => [x.v, x.n]), (v) => (this.estilo.patron = v as Patron)));
     } else if (this.herr === 'acceso') {
       p.append(this.campoColor('Color', this.estilo.acceso, (c) => (this.estilo.acceso = c)));
-    } else if (this.herr !== 'seleccionar' && this.herr !== 'mano' && this.herr !== 'puerta' && this.herr !== 'ventana' && this.herr !== 'dividir') {
+    } else if (this.herr !== 'seleccionar' && this.herr !== 'mano' && this.herr !== 'puerta' && this.herr !== 'ventana' && this.herr !== 'dividir' && this.herr !== 'norte') {
       p.append(this.campoColor('Color', this.estilo.color, (c) => (this.estilo.color = c)));
     }
     if (this.herr === 'seleccionar' || this.herr === 'mano') {
@@ -425,6 +537,164 @@ export class Editor {
         h('p', { innerHTML: 'Ctrl+Z deshacer · Ctrl+Y rehacer<br>Supr borrar · Ctrl+D duplicar<br>Flechas mover · R girar<br>Rueda: zoom · Espacio+arrastrar: mover vista' }),
       );
     }
+  }
+
+  // ───────────────────────── Giro libre de la vista isométrica ─────────────────────────
+
+  private empezarGiroIso(s: Pt) {
+    cancelAnimationFrame(this.animGiro);
+    const c = cajaDeTodos(this.datos.elementos.filter((e) => e.tipo !== 'norte'));
+    const pivote = c ? { x: (c.minx + c.maxx) / 2, y: (c.miny + c.maxy) / 2 } : { x: 0, y: 0 };
+    const o = opcionesIso(this.datos);
+    const g0 = this.giroVivo ?? o.giro;
+    const e0 = this.elevVivo ?? o.elevacion;
+    usarElevacion(e0);
+    const q = aIso(pivote, 0, g0);
+    const pantalla = { x: this.vista.ox + q.x * this.vista.escala, y: this.vista.oy + q.y * this.vista.escala };
+    this.accion = { k: 'girarIso', sx: s.x, sy: s.y, g0, e0, pivote, pantalla, movido: false };
+    this.canvas.style.cursor = 'grabbing';
+  }
+
+  /** Gira e inclina la vista dejando el centro del croquis en el mismo lugar de la pantalla. */
+  private ponerGiroVivo(giro: number, a: { pivote: Pt; pantalla: Pt }, elev?: number) {
+    this.giroVivo = giro;
+    if (elev !== undefined) this.elevVivo = elev;
+    usarElevacion(this.elevVivo ?? opcionesIso(this.datos).elevacion);
+    const q = aIso(a.pivote, 0, giro);
+    this.vista.ox = a.pantalla.x - q.x * this.vista.escala;
+    this.vista.oy = a.pantalla.y - q.y * this.vista.escala;
+    this.dibujar();
+  }
+
+  /** Al soltar, la vista se acomoda al giro de 90° más cercano con una animación corta. */
+  private asentarGiroIso(a: { pivote: Pt; pantalla: Pt }) {
+    const desde = this.giroVivo ?? 0;
+    const hasta = Math.round(desde);
+    const t0 = performance.now();
+    const dur = 220;
+    const paso = (t: number) => {
+      const k = Math.min(1, (t - t0) / dur);
+      const e = 1 - (1 - k) ** 3;
+      this.ponerGiroVivo(desde + (hasta - desde) * e, a);
+      if (k < 1) {
+        this.animGiro = requestAnimationFrame(paso);
+        return;
+      }
+      this.giroVivo = null;
+      this.datos.opciones.giroIso = ((hasta % 4) + 4) % 4;
+      if (this.elevVivo !== null) this.datos.opciones.elevacionIso = Math.round(this.elevVivo * 10) / 10;
+      this.elevVivo = null;
+      this.notificar();
+      this.actualizarPanel();
+    };
+    this.animGiro = requestAnimationFrame(paso);
+  }
+
+  private panelIsometrico() {
+    const p = this.panel;
+    const o = opcionesIso(this.datos);
+    p.append(
+      h('h3', { textContent: 'Vista isométrica' }),
+      h('p', {
+        textContent:
+          'El plano en 3D, con los muros levantados y los muebles como volúmenes. Arrastra para mover la vista; arrastra con el botón derecho (o Shift + arrastrar) para girarla a los lados y para inclinarla hacia arriba o hacia abajo; usa la rueda para acercar. Para editar, vuelve a Plano.',
+      }),
+    );
+    const altura = h('input', { type: 'number', value: String(o.altura), min: '0.2', max: '6', step: '0.1' });
+    altura.addEventListener('input', () => {
+      const v = parseFloat(altura.value);
+      if (!Number.isFinite(v) || v < 0.2 || v > 6) return;
+      this.datos.opciones.alturaMuros = v;
+      this.notificar();
+    });
+    p.append(this.campo('Altura de los muros (m)', altura));
+    const muros = h('div', { className: 'crq-botones' });
+    for (const [txt, v] of [
+      ['Completa', ALTURA_MUROS],
+      ['Media', 1.2],
+      ['Baja', 0.4],
+    ] as const) {
+      const b = this.boton(txt, `Muros de ${v} m`, () => {
+        this.datos.opciones.alturaMuros = v;
+        altura.value = String(v);
+        this.notificar();
+      });
+      muros.append(b);
+    }
+    p.append(muros);
+    // Transparencia de los muros que dan al frente, para ver el interior
+    const valorTr = h('span', { className: 'crq-valor', textContent: `${Math.round(o.transparencia * 100)} %` });
+    const tr = h('input', { type: 'range', min: '0', max: '100', step: '5', value: String(Math.round(o.transparencia * 100)) });
+    tr.addEventListener('input', () => {
+      this.datos.opciones.transparenciaFrontal = Number(tr.value);
+      valorTr.textContent = `${tr.value} %`;
+      this.notificar();
+    });
+    p.append(
+      h('label', { className: 'crq-campo' }, [
+        h('span', { className: 'crq-fila-etq' }, ['Transparencia de muros frontales', valorTr]),
+        tr,
+      ]),
+    );
+    // Transparencia de los muros intermedios (los que separan cuartos por dentro)
+    const valorTi = h('span', { className: 'crq-valor', textContent: `${Math.round(o.intermedios * 100)} %` });
+    const ti = h('input', { type: 'range', min: '0', max: '100', step: '5', value: String(Math.round(o.intermedios * 100)) });
+    ti.addEventListener('input', () => {
+      this.datos.opciones.transparenciaIntermedia = Number(ti.value);
+      valorTi.textContent = `${ti.value} %`;
+      this.notificar();
+    });
+    p.append(
+      h('label', { className: 'crq-campo' }, [
+        h('span', { className: 'crq-fila-etq' }, ['Transparencia de muros intermedios', valorTi]),
+        ti,
+      ]),
+    );
+    // Inclinación: de casi a ras del piso (5°) a vista desde arriba (90°)
+    const valorEl = h('span', { className: 'crq-valor', textContent: `${Math.round(o.elevacion)}°` });
+    const el = h('input', { type: 'range', min: '5', max: '90', step: '1', value: String(Math.round(o.elevacion)) });
+    el.addEventListener('input', () => {
+      this.datos.opciones.elevacionIso = Number(el.value);
+      valorEl.textContent = `${el.value}°`;
+      this.notificar();
+      this.encuadrar();
+    });
+    p.append(
+      h('label', { className: 'crq-campo' }, [
+        h('span', { className: 'crq-fila-etq' }, ['Inclinación de la vista', valorEl]),
+        el,
+      ]),
+      h('div', { className: 'crq-botones' }, [
+        this.boton('Isométrica', 'Volver a la inclinación isométrica (35°)', () => {
+          delete this.datos.opciones.elevacionIso;
+          this.notificar();
+          this.encuadrar();
+          this.actualizarPanel();
+        }),
+        this.boton('Desde arriba', 'Ver el croquis desde arriba (90°)', () => {
+          this.datos.opciones.elevacionIso = 90;
+          this.notificar();
+          this.encuadrar();
+          this.actualizarPanel();
+        }),
+      ]),
+    );
+    const giro = h('div', { className: 'crq-botones' });
+    const girar = (d: number) => {
+      this.datos.opciones.giroIso = (opcionesIso(this.datos).giro + d + 4) % 4;
+      this.notificar();
+      this.encuadrar();
+    };
+    giro.append(
+      this.boton(ICONOS.girarIzq + 'Girar', 'Girar la vista a la izquierda', () => girar(-1)),
+      this.boton(ICONOS.girarDer + 'Girar', 'Girar la vista a la derecha', () => girar(1)),
+    );
+    p.append(this.campo('Ver desde otro lado', giro));
+    p.append(
+      h('p', {
+        textContent: this.o.modo === 'modal' ? 'Al guardar, la imagen del croquis sale en esta vista.' : 'Descargar PNG guarda la imagen en esta vista.',
+      }),
+    );
   }
 
   private panelPropiedades(el: Elemento) {
@@ -440,6 +710,7 @@ export class Editor {
       cota: 'Cota',
       linea: 'Línea',
       trazo: 'Trazo',
+      norte: 'Orientación',
     };
     p.append(h('h3', { textContent: nombres[el.tipo] }));
     switch (el.tipo) {
@@ -506,6 +777,38 @@ export class Editor {
         p.append(this.campoNum('Fondo (m)', el.alto, 0.1, 20, 0.05, (v) => (el.alto = v)));
         p.append(this.campoNum('Ángulo (°)', Math.round((el.ang * 180) / Math.PI), -360, 360, 15, (v) => (el.ang = (v * Math.PI) / 180)));
         p.append(this.campoColor('Color', el.color, (c) => (el.color = c)));
+        if (tieneHaz(el.clave)) {
+          p.append(h('h3', { textContent: 'Haz de rayos X' }));
+          p.append(this.campoCheck('Mostrar el haz (amarillo)', !!el.haz, (v) => {
+            el.haz = v;
+            this.actualizarPanel();
+          }));
+          if (el.haz) {
+            p.append(this.campoNum('Amplitud del campo (m)', el.hazAmplitud ?? 0.5, 0.1, 3, 0.05, (v) => (el.hazAmplitud = v)));
+            // Alcance: automático (hasta el primer muro o mueble alto) o fijo; también con la flecha doble del lienzo
+            const chkAuto = this.campoCheck('Automática (hasta el primer muro o mueble alto)', el.hazDistancia === undefined, (v) => {
+              if (v) delete el.hazDistancia;
+              else el.hazDistancia = Math.round(alcanceHaz(el, this.datos) * 100) / 100;
+              this.actualizarPanel();
+            });
+            p.append(
+              this.campoNum('Distancia del haz (m)', Math.round(alcanceHaz(el, this.datos) * 100) / 100, 0.2, 8, 0.05, (v) => {
+                el.hazDistancia = v;
+                const c = chkAuto.querySelector('input');
+                if (c) c.checked = false;
+              }),
+              chkAuto,
+            );
+            const valor = h('span', { className: 'crq-valor', textContent: `${el.hazTransparencia ?? 60} %` });
+            const r = h('input', { type: 'range', min: '0', max: '95', step: '5', value: String(el.hazTransparencia ?? 60) });
+            r.addEventListener('input', () => {
+              valor.textContent = `${r.value} %`;
+              this.editar(() => (el.hazTransparencia = Number(r.value)), false);
+            });
+            r.addEventListener('change', () => this.editar(() => (el.hazTransparencia = Number(r.value)), true));
+            p.append(h('label', { className: 'crq-campo' }, [h('span', { className: 'crq-fila-etq' }, ['Transparencia del haz', valor]), r]));
+          }
+        }
         break;
       case 'texto': {
         const t = this.campoTexto('Texto', el.texto, (v) => (el.texto = v), true);
@@ -516,6 +819,14 @@ export class Editor {
         p.append(this.campoColor('Color', el.color, (c) => (el.color = c)));
         break;
       }
+      case 'norte':
+        p.append(
+          this.campoSelect('Punto cardinal', el.punto ?? 'N', [['N', 'Norte (N)'], ['S', 'Sur (S)'], ['E', 'Este (E)'], ['O', 'Oeste (O)']], (v) => (el.punto = v as PuntoCardinal)),
+        );
+        p.append(h('p', { textContent: 'La flecha apunta hacia el punto elegido y la letra queda fija. Gira la flecha con la manija redonda (Shift para giro libre) o escribe el ángulo: 0° es hacia arriba del plano y aumenta en el sentido del reloj.' }));
+        p.append(this.campoNum('Ángulo de la flecha (°)', Math.round((((el.ang * 180) / Math.PI) % 360 + 360) % 360), 0, 359, 1, (v) => (el.ang = normalizarAng((v * Math.PI) / 180))));
+        p.append(this.campoNum('Tamaño (m)', el.tam, 0.3, 5, 0.1, (v) => (el.tam = v)));
+        break;
       case 'acceso':
         p.append(this.campoTexto('Texto', el.texto, (v) => (el.texto = v)));
         p.append(this.campoColor('Color', el.color, (c) => (el.color = c)));
@@ -540,7 +851,7 @@ export class Editor {
   private accionesSeleccion() {
     const cont = h('div', { className: 'crq-botones' });
     const sel = this.seleccionados();
-    if (sel.some((e) => e.tipo === 'mueble' || e.tipo === 'puerta' || e.tipo === 'ventana' || e.tipo === 'texto')) {
+    if (sel.some((e) => e.tipo === 'mueble' || e.tipo === 'puerta' || e.tipo === 'ventana' || e.tipo === 'texto' || e.tipo === 'norte')) {
       cont.append(this.boton('Girar 90°', 'Girar (R)', () => this.girarSeleccion(Math.PI / 2)));
     }
     cont.append(
@@ -619,7 +930,7 @@ export class Editor {
 
   private aplicarColor(el: Elemento, c: string) {
     if (el.tipo === 'area') el.borde = c;
-    else el.color = c;
+    else if (el.tipo !== 'norte') el.color = c;
   }
 
   // ───────────────────────── Historial ─────────────────────────
@@ -726,7 +1037,7 @@ export class Editor {
     if (!sel.length) return;
     this.registrar();
     for (const el of sel) {
-      if (el.tipo === 'mueble' || el.tipo === 'texto') el.ang = normalizarAng(el.ang + ang);
+      if (el.tipo === 'mueble' || el.tipo === 'texto' || el.tipo === 'norte') el.ang = normalizarAng(el.ang + ang);
       else if (el.tipo === 'puerta') {
         // Recorre las 4 orientaciones de la puerta sobre el mismo muro
         if (!el.invertir && !el.espejo) el.espejo = true;
@@ -755,6 +1066,12 @@ export class Editor {
 
   encuadrar() {
     const r = this.canvas.getBoundingClientRect();
+    if (this.isometrico) {
+      if (r.width >= 10) this.vista = encuadreIso(this.datos, opcionesIso(this.datos), r.width, r.height, 40, MAX_ESCALA);
+      this.actualizarEstado();
+      this.dibujar();
+      return;
+    }
     const c = cajaDeTodos(this.datos.elementos);
     if (!c || r.width < 10) {
       this.vista = { escala: ESCALA_INICIAL, ox: 60, oy: 60 };
@@ -883,8 +1200,30 @@ export class Editor {
     };
   }
 
+  /**
+   * Pega una rejilla (u otro elemento de muro) a la cara del muro más cercano, del lado del cursor,
+   * con el fondo contra el muro. Devuelve false si no hay muro cerca.
+   */
+  private pegarAMuro(m: Mueble, p: Pt): boolean {
+    const w = this.colocarEnMuro(p, m.ancho);
+    if (!w) return false;
+    const nx = -Math.sin(w.ang);
+    const ny = Math.cos(w.ang);
+    const lado = (p.x - w.p.x) * nx + (p.y - w.p.y) * ny >= 0 ? 1 : -1;
+    const d = (w.grosor / 2 + m.alto / 2) * lado;
+    m.p = { x: w.p.x + nx * d, y: w.p.y + ny * d };
+    m.ang = normalizarAng(lado > 0 ? w.ang : w.ang + Math.PI);
+    return true;
+  }
+
   private nuevoMueble(p: Pt): Mueble {
     const it = itemPorClave(this.muebleClave) ?? CATALOGO[0];
+    const m = this.muebleLibre(it, p);
+    if (DE_MURO.has(it.clave)) this.pegarAMuro(m, p);
+    return m;
+  }
+
+  private muebleLibre(it: ItemCatalogo, p: Pt): Mueble {
     return {
       id: nuevoId(),
       tipo: 'mueble',
@@ -1287,11 +1626,15 @@ export class Editor {
       const paso = ((Math.round(ang / (Math.PI / 4)) % 4) + 4) % 4;
       return ['ew-resize', 'nwse-resize', 'ns-resize', 'nesw-resize'][paso];
     }
+    if (m.cual === 'haz' && el?.tipo === 'mueble') {
+      const paso = (((Math.round((el.ang + Math.PI / 2) / (Math.PI / 4)) % 4) + 4) % 4);
+      return ['ew-resize', 'nwse-resize', 'ns-resize', 'nesw-resize'][paso];
+    }
     return m.cual === 'rot' ? 'grab' : 'move';
   }
 
   /** Manijas del elemento seleccionado (en coordenadas del mundo). */
-  private manijas(): { cual: 'a' | 'b' | 'rot' | 'tam' | 'etq' | 'medio' | number; p: Pt }[] {
+  private manijas(): { cual: 'a' | 'b' | 'rot' | 'tam' | 'etq' | 'medio' | 'haz' | number; p: Pt }[] {
     const sel = this.seleccionados();
     const cuarto = this.cuartoSeleccionado();
     if (sel.length !== 1 && !cuarto) return [];
@@ -1306,10 +1649,13 @@ export class Editor {
       const vertices = el.muros?.length ? this.esquinasCuarto(el) : el.puntos;
       return [...vertices.map((p, i) => ({ cual: i, p })), ...etq];
     }
+    if (el.tipo === 'norte') return [{ cual: 'rot', p: aMundo({ x: 0, y: -el.tam * 0.8 - this.tol(14) }, el.p, el.ang) }];
     if (el.tipo === 'mueble') {
       return [
         { cual: 'rot', p: aMundo({ x: 0, y: -el.alto / 2 - this.tol(22) }, el.p, el.ang) },
         { cual: 'tam', p: aMundo({ x: el.ancho / 2, y: el.alto / 2 }, el.p, el.ang) },
+        // Alcance del haz de rayos X: al final del haz, se arrastra a lo largo de él
+        ...(el.haz && tieneHaz(el.clave) ? [{ cual: 'haz' as const, p: aMundo({ x: 0, y: el.alto / 2 + alcanceHaz(el, this.datos) }, el.p, el.ang) }] : []),
       ];
     }
     return [];
@@ -1331,7 +1677,7 @@ export class Editor {
       }
     }, { passive: false });
     c.addEventListener('dblclick', (e) => {
-      if (this.herr !== 'seleccionar') return;
+      if (this.herr !== 'seleccionar' || this.isometrico) return;
       const p = this.aMundo(this.enPantalla(e).x, this.enPantalla(e).y);
       const el = this.elementoEn(p);
       if (el && (el.tipo === 'texto' || el.tipo === 'area' || el.tipo === 'mueble' || el.tipo === 'acceso')) {
@@ -1370,6 +1716,18 @@ export class Editor {
       return;
     }
     if (this.punteros.size > 2) return;
+    if (this.isometrico) {
+      // En la vista isométrica solo se mueve o se gira la vista
+      if (e.button === 2 || (e.button === 0 && e.shiftKey)) {
+        this.empezarGiroIso(s);
+        return;
+      }
+      if (e.button === 0 || e.button === 1) {
+        this.accion = { k: 'pan', sx: s.x, sy: s.y, ox: this.vista.ox, oy: this.vista.oy };
+        this.canvas.style.cursor = 'grabbing';
+      }
+      return;
+    }
     const p = this.aMundo(s.x, s.y);
     this.shift = e.shiftKey;
     if (e.button === 1 || this.espacio || this.herr === 'mano') {
@@ -1447,9 +1805,31 @@ export class Editor {
         this.agregar(ab);
         return;
       }
-      case 'mueble':
-        this.agregar(this.nuevoMueble(p));
+      case 'mueble': {
+        const m = this.nuevoMueble(p);
+        if (DE_MURO.has(m.clave) && !this.pegarAMuro(m, p)) return this.aviso('La rejilla solo se coloca sobre un muro: haz clic junto a uno.');
+        this.agregar(m);
         return;
+      }
+      case 'norte': {
+        // Solo un norte por croquis: si ya existe, se mueve al nuevo punto
+        const previo = this.datos.elementos.find((e): e is Norte => e.tipo === 'norte');
+        let n: Norte;
+        if (previo) {
+          this.registrar();
+          previo.p = this.ajustar(p);
+          n = previo;
+          this.notificar();
+        } else {
+          n = { id: nuevoId(), tipo: 'norte', p: this.ajustar(p), ang: 0, tam: 1 };
+          this.agregar(n);
+        }
+        this.cambiarHerramienta('seleccionar');
+        this.seleccion = new Set([n.id]);
+        this.actualizarPanel();
+        this.dibujar();
+        return;
+      }
       case 'texto': {
         const t: Texto = { id: nuevoId(), tipo: 'texto', p: this.ajustar(p), texto: 'Etiqueta', tam: 0.3, color: this.estilo.color, negrita: false, ang: 0 };
         this.agregar(t);
@@ -1497,6 +1877,24 @@ export class Editor {
       this.dibujar();
       return;
     }
+    if (this.isometrico) {
+      const a = this.accion;
+      if (a?.k === 'girarIso') {
+        if (Math.abs(s.x - a.sx) > 2 || Math.abs(s.y - a.sy) > 2) a.movido = true;
+        // Horizontal: media pantalla de arrastre (o 240 px) = un cuarto de vuelta.
+        // Vertical: inclina la vista (hacia abajo se ve más desde arriba), de 5° a 90°.
+        const paso = Math.max(240, this.canvas.getBoundingClientRect().width / 4);
+        const elev = Math.min(90, Math.max(5, a.e0 + (s.y - a.sy) * 0.3));
+        this.ponerGiroVivo(a.g0 + (s.x - a.sx) / paso, a, elev);
+        return;
+      }
+      if (a?.k === 'pan') {
+        this.vista.ox = a.ox + s.x - a.sx;
+        this.vista.oy = a.oy + s.y - a.sy;
+        this.dibujar();
+      }
+      return;
+    }
     const p = this.aMundo(s.x, s.y);
     this.shift = e.shiftKey;
     this.cursor = p;
@@ -1514,6 +1912,13 @@ export class Editor {
           if (!a.movido && Math.hypot(dx, dy) < this.tol(3)) break;
           a.movido = true;
           const sel = this.seleccionados();
+          if (sel.length === 1 && sel[0].tipo === 'mueble' && DE_MURO.has(sel[0].clave)) {
+            // Las rejillas se deslizan por los muros
+            const mb = sel[0];
+            if (!this.pegarAMuro(mb, p)) mb.p = { x: p.x, y: p.y };
+            a.ultimo = p;
+            break;
+          }
           if (sel.length === 1 && (sel[0].tipo === 'puerta' || sel[0].tipo === 'ventana')) {
             const ab = sel[0];
             const m = this.colocarEnMuro(p, ab.ancho);
@@ -1594,11 +1999,19 @@ export class Editor {
       for (const v of a.vinculados) v.el[v.extremo] = { ...q };
     } else if (el.tipo === 'area' && typeof a.cual === 'number') {
       el.puntos[a.cual] = this.ajustar(p, null, excluir);
+    } else if (el.tipo === 'norte' && a.cual === 'rot') {
+      let ang = Math.atan2(p.y - el.p.y, p.x - el.p.x) + Math.PI / 2;
+      if (!this.shift) ang = Math.round(ang / (Math.PI / 36)) * (Math.PI / 36);
+      el.ang = normalizarAng(ang);
     } else if (el.tipo === 'mueble') {
       if (a.cual === 'rot') {
         let ang = Math.atan2(p.y - el.p.y, p.x - el.p.x) + Math.PI / 2;
         if (!this.shift) ang = Math.round(ang / (Math.PI / 12)) * (Math.PI / 12);
         el.ang = normalizarAng(ang);
+      } else if (a.cual === 'haz') {
+        const l = puntoLocal(el, p).y - el.alto / 2;
+        const v = this.shift ? l : Math.round(l / 0.05) * 0.05;
+        el.hazDistancia = Math.round(Math.min(8, Math.max(0.2, v)) * 100) / 100;
       } else if (a.cual === 'tam') {
         const l = puntoLocal(el, p);
         const r = (v: number) => (this.iman ? Math.max(PASO_REJILLA, Math.round(v / PASO_REJILLA) * PASO_REJILLA) : Math.max(0.05, v));
@@ -1619,7 +2032,15 @@ export class Editor {
     if (!a) return;
     switch (a.k) {
       case 'pan':
-        this.canvas.style.cursor = this.herr === 'mano' ? 'grab' : this.herr === 'seleccionar' ? 'default' : 'crosshair';
+        this.canvas.style.cursor = this.isometrico ? 'grab' : this.cursorHerramienta();
+        break;
+      case 'girarIso':
+        this.canvas.style.cursor = 'grab';
+        if (a.movido) this.asentarGiroIso(a);
+        else {
+          this.giroVivo = null;
+          this.elevVivo = null;
+        }
         break;
       case 'mover':
         if (a.movido) {
@@ -1690,6 +2111,17 @@ export class Editor {
       if (ctrl && k === 'y') {
         e.preventDefault();
         this.rehacer();
+        return;
+      }
+      if (this.isometrico) {
+        // La vista isométrica no se edita: solo zoom y Esc para volver al plano
+        if (ctrl) return;
+        if (k === '+' || k === '=') return this.zoom(1.25);
+        if (k === '-') return this.zoom(1 / 1.25);
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          this.cambiarVista('plano');
+        }
         return;
       }
       if (ctrl && k === 'd') {
@@ -1818,6 +2250,10 @@ export class Editor {
     }
     if (!a && !this.poli && this.cursor) {
       if (this.herr === 'mueble') extras.push(this.nuevoMueble(this.cursor));
+      if (this.herr === 'norte') {
+        const previo = this.datos.elementos.find((e): e is Norte => e.tipo === 'norte');
+        extras.push({ id: '', tipo: 'norte', p: this.ajustar(this.cursor), ang: previo?.ang ?? 0, tam: previo?.tam ?? 1, punto: previo?.punto ?? 'N' });
+      }
       if (this.herr === 'puerta' || this.herr === 'puerta2' || this.herr === 'ventana') extras.push(this.nuevaAbertura(this.herr, this.cursor));
     }
     return extras;
@@ -1828,6 +2264,10 @@ export class Editor {
     const dpr = window.devicePixelRatio || 1;
     const ctx = this.ctx;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (this.isometrico) {
+      dibujarIsometrico(ctx, this.datos, this.vista, { ancho: r.width, alto: r.height, giro: this.giroVivo ?? undefined, elevacion: this.elevVivo ?? undefined });
+      return;
+    }
     dibujarEscena(ctx, this.datos, this.vista, {
       ancho: r.width,
       alto: r.height,
@@ -1887,6 +2327,11 @@ export class Editor {
         if (el?.tipo === 'muro') flechaDoble(ctx, s, Math.atan2(el.b.y - el.a.y, el.b.x - el.a.x) + Math.PI / 2);
         continue;
       }
+      if (m.cual === 'haz') {
+        const el = this.seleccionados()[0];
+        if (el?.tipo === 'mueble') flechaDoble(ctx, s, el.ang + Math.PI / 2);
+        continue;
+      }
       ctx.beginPath();
       if (m.cual === 'rot') ctx.arc(s.x, s.y, 6, 0, Math.PI * 2);
       else ctx.rect(s.x - 5, s.y - 5, 10, 10);
@@ -1940,7 +2385,7 @@ export class Editor {
     const fecha = new Date().toISOString().slice(0, 10);
     if (tipo === 'png') {
       a.href = this.imagen().png;
-      a.download = `croquis-${fecha}.png`;
+      a.download = this.isometrico ? `croquis-isometrico-${fecha}.png` : `croquis-${fecha}.png`;
     } else {
       a.href = URL.createObjectURL(new Blob([JSON.stringify(this.datos)], { type: 'application/json' }));
       a.download = `croquis-${fecha}.croquis.json`;

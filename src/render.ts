@@ -1,7 +1,8 @@
 import { dibujarSimbolo } from './catalogo';
 import { contorno, posEtiqueta } from './elementos';
-import { areaPoligono, dist, formatoM } from './geometria';
-import type { Abertura, Area, DatosCroquis, Elemento, Muro, Patron, Pt } from './modelo';
+import { alturaModelo, focoRayos } from './muebles3d';
+import { aMundo, areaPoligono, dist, enPoligono, formatoM } from './geometria';
+import type { Abertura, Area, DatosCroquis, Elemento, Mueble, Muro, Patron, Pt } from './modelo';
 
 /** pantalla = mundo * escala + o */
 export interface Vista {
@@ -31,6 +32,7 @@ const ORDEN: Record<Elemento['tipo'], number> = {
   cota: 5,
   acceso: 6,
   texto: 7,
+  norte: 8,
 };
 
 const cachePatrones = new Map<string, CanvasPattern | null>();
@@ -75,6 +77,36 @@ function patron(ctx: CanvasRenderingContext2D, tipo: Patron, color: string): Can
   const p = ctx.createPattern(c, 'repeat');
   cachePatrones.set(clave, p);
   return p;
+}
+
+/** Color del haz de rayos X. */
+export const AMARILLO_HAZ = '#facc15';
+
+/** Muebles que pueden mostrar el haz de rayos X. */
+export const tieneHaz = (clave: string) => clave === 'tubo-rx';
+
+/**
+ * Largo (m) del haz de rayos X hacia el frente del tubo: llega hasta el primer muro o mueble alto
+ * (bucky de pared, mampara…) que encuentre; si no hay nada en 6 m, 1.8 m (distancia foco-receptor usual).
+ * Si el mueble tiene `hazDistancia`, se usa esa (recortada solo por los muros).
+ */
+export function alcanceHaz(el: Mueble, d: DatosCroquis): number {
+  const f = focoRayos(el);
+  const frente = aMundo({ x: 0, y: el.alto / 2 + 1 }, el.p, el.ang);
+  const dir = { x: frente.x - f.p.x, y: frente.y - f.p.y };
+  const muros = poligonosMuros(d.elementos.filter((e): e is Muro => e.tipo === 'muro')).map((m) => m.pts as Pt[]);
+  const obstaculos = d.elementos
+    .filter((o): o is Mueble => o.tipo === 'mueble' && o !== el && alturaModelo(o) > f.z - 0.3)
+    .map((o) => contorno(o))
+    .filter((c) => !enPoligono(f.p, c));
+  // Con un alcance fijado a mano, el haz solo se detiene antes si topa con un muro
+  const fijo = el.hazDistancia;
+  const tope = fijo ?? 6;
+  for (let t = 0.02; t <= tope + 1e-9; t += 0.02) {
+    const q = { x: f.p.x + dir.x * t, y: f.p.y + dir.y * t };
+    if (muros.some((m) => enPoligono(q, m)) || (fijo === undefined && obstaculos.some((c) => enPoligono(q, c)))) return Math.max(0.05, t - 0.02);
+  }
+  return fijo ?? 1.8;
 }
 
 /** Escribe texto con tamaño en metros sin depender de fuentes < 1px. */
@@ -258,6 +290,45 @@ function dibujarAbertura(ctx: CanvasRenderingContext2D, el: Abertura, fondo: str
   ctx.restore();
 }
 
+/**
+ * Letra del punto cardinal (siempre derecha) con una flecha roja que la atraviesa
+ * y apunta hacia ese punto. Medidas en metros.
+ */
+export function dibujarNorte(ctx: CanvasRenderingContext2D, p: Pt, ang: number, tam: number, letra = 'N') {
+  ctx.save();
+  ctx.translate(p.x, p.y);
+  const k = 100;
+  ctx.save();
+  ctx.scale(1 / k, 1 / k);
+  ctx.font = `bold ${tam * k * 1.15}px Arial, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#111827';
+  ctx.fillText(letra, 0, tam * k * 0.06);
+  ctx.restore();
+  ctx.rotate(ang);
+  const rojo = '#dc2626';
+  ctx.strokeStyle = rojo;
+  ctx.fillStyle = rojo;
+  ctx.lineWidth = tam * 0.07;
+  ctx.lineCap = 'round';
+  const punta = -tam * 0.8;
+  ctx.beginPath();
+  ctx.moveTo(0, tam * 0.75);
+  ctx.lineTo(0, punta + tam * 0.2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(0, punta);
+  ctx.lineTo(tam * 0.13, punta + tam * 0.26);
+  ctx.lineTo(-tam * 0.13, punta + tam * 0.26);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(0, tam * 0.75, tam * 0.045, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
 function flecha(ctx: CanvasRenderingContext2D, a: Pt, b: Pt, tam: number) {
   const ang = Math.atan2(b.y - a.y, b.x - a.x);
   ctx.beginPath();
@@ -287,6 +358,27 @@ export function dibujarElemento(ctx: CanvasRenderingContext2D, el: Elemento, d: 
       ctx.translate(el.p.x, el.p.y);
       ctx.rotate(el.ang);
       dibujarSimbolo(ctx, el.clave, el.ancho, el.alto, el.color, 0.02);
+      if (el.haz && tieneHaz(el.clave)) {
+        // Haz de rayos X visto desde arriba: abanico que sale del frente del tubo
+        const s = (el.hazAmplitud ?? 0.5) / 2;
+        const y0 = el.alto / 2;
+        const y1 = y0 + alcanceHaz(el, d);
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(0, y0);
+        ctx.lineTo(s, y1);
+        ctx.lineTo(-s, y1);
+        ctx.closePath();
+        ctx.globalAlpha = 1 - (el.hazTransparencia ?? 60) / 100;
+        ctx.fillStyle = AMARILLO_HAZ;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = '#ca8a04';
+        ctx.lineWidth = 0.015;
+        ctx.setLineDash([0.05, 0.035]);
+        ctx.stroke();
+        ctx.restore();
+      }
       if (el.etiqueta) {
         ctx.rotate(-el.ang);
         let texto = el.etiqueta;
@@ -305,6 +397,9 @@ export function dibujarElemento(ctx: CanvasRenderingContext2D, el: Elemento, d: 
           halo: true,
         });
       }
+      break;
+    case 'norte':
+      dibujarNorte(ctx, el.p, el.ang, el.tam, el.punto ?? 'N');
       break;
     case 'texto':
       textoMundo(ctx, el.texto, el.p, el.tam, el.color, { ang: el.ang, negrita: el.negrita });
@@ -390,11 +485,11 @@ export function dibujarElemento(ctx: CanvasRenderingContext2D, el: Elemento, d: 
 const clavePt = (p: Pt) => `${Math.round(p.x * 1e4)},${Math.round(p.y * 1e4)}`;
 
 /**
- * Dibuja cada muro como un polígono. Donde los muros llegan a un punto en exactamente dos direcciones,
+ * Calcula el polígono de cada muro (4 esquinas). Donde los muros llegan a un punto en exactamente dos direcciones,
  * el extremo se corta en inglete sobre la bisectriz, aunque varios muros compartan cada dirección
  * (cuartos empalmados), para que las esquinas en diagonal queden limpias y sin picos.
  */
-function dibujarMuros(ctx: CanvasRenderingContext2D, muros: Muro[]) {
+export function poligonosMuros(muros: Muro[]): { m: Muro; pts: [Pt, Pt, Pt, Pt] }[] {
   type V = { x: number; y: number };
   const unit = (x: number, y: number): V => {
     const l = Math.hypot(x, y) || 1;
@@ -437,22 +532,27 @@ function dibujarMuros(ctx: CanvasRenderingContext2D, muros: Muro[]) {
       { x: lados[1].x - d.x * g, y: lados[1].y - d.y * g },
     ];
   };
-  const t = ctx.getTransform();
-  const pelo = 1 / (Math.hypot(t.a, t.b) || 1);
-  ctx.save();
-  ctx.lineJoin = 'miter';
+  const res: { m: Muro; pts: [Pt, Pt, Pt, Pt] }[] = [];
   for (const m of muros) {
     if (dist(m.a, m.b) < 1e-9) continue;
     const g = m.grosor / 2;
     const u = unit(m.b.x - m.a.x, m.b.y - m.a.y);
     const [a1, a2] = extremo(m.a, u, g);
     const [b1, b2] = extremo(m.b, { x: -u.x, y: -u.y }, g);
-    ctx.beginPath();
     // En b los lados quedan invertidos (la normal apunta al otro lado)
-    ctx.moveTo(a1.x, a1.y);
-    ctx.lineTo(b2.x, b2.y);
-    ctx.lineTo(b1.x, b1.y);
-    ctx.lineTo(a2.x, a2.y);
+    res.push({ m, pts: [a1, b2, b1, a2] });
+  }
+  return res;
+}
+
+function dibujarMuros(ctx: CanvasRenderingContext2D, muros: Muro[]) {
+  const t = ctx.getTransform();
+  const pelo = 1 / (Math.hypot(t.a, t.b) || 1);
+  ctx.save();
+  ctx.lineJoin = 'miter';
+  for (const { m, pts } of poligonosMuros(muros)) {
+    ctx.beginPath();
+    pts.forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)));
     ctx.closePath();
     ctx.fillStyle = m.color;
     ctx.fill();
@@ -489,10 +589,13 @@ function dibujarCuadricula(ctx: CanvasRenderingContext2D, v: Vista, ancho: numbe
   }
 }
 
+/** El transfer va en el vano de la puerta: se dibuja encima de ella para que no lo tape. */
+const rango = (el: Elemento) => (el.tipo === 'mueble' && (el.clave === 'transfer' || el.clave === 'transfer-barrera') ? 4.5 : ORDEN[el.tipo]);
+
 export function ordenar(els: Elemento[]): Elemento[] {
   return els
     .map((el, i) => ({ el, i }))
-    .sort((a, b) => ORDEN[a.el.tipo] - ORDEN[b.el.tipo] || a.i - b.i)
+    .sort((a, b) => rango(a.el) - rango(b.el) || a.i - b.i)
     .map((x) => x.el);
 }
 
