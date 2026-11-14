@@ -8,7 +8,7 @@ import { alturaModelo, focoRayos, modeloMueble } from './muebles3d';
 import { cajaDeTodos, contorno, posEtiqueta, type Caja } from './elementos';
 import { aMundo, areaPoligono, dist, enPoligono } from './geometria';
 import type { Abertura, DatosCroquis, Elemento, Mueble, Muro, Norte, Pt } from './modelo';
-import { AMARILLO_HAZ, ajustarTexto, dibujarElemento, ordenar, poligonosMuros, textoMundo, tieneHaz, type Vista } from './render';
+import { AMARILLO_HAZ, ajustarTexto, alcanceHaz, dibujarElemento, ordenar, poligonosMuros, textoMundo, tieneHaz, type Vista } from './render';
 
 /** Altura de muros por defecto, en metros. */
 export const ALTURA_MUROS = 2.5;
@@ -130,6 +130,67 @@ interface Prisma {
   frontal?: boolean;
   /** Superficie curva: sin aristas verticales. */
   liso?: boolean;
+  /** Dibujo propio en lugar de las caras del prisma (el haz de rayos X). */
+  dibujo?: (ctx: CanvasRenderingContext2D, pelo: number) => void;
+}
+
+/**
+ * Haz de rayos X: pirámide amarilla translúcida que sale del frente del tubo, en horizontal, hasta el
+ * primer muro o mueble alto. Va como una pieza más en el orden de dibujo para que lo tapen los
+ * volúmenes que quedan delante.
+ */
+function prismaHaz(el: Mueble, d: DatosCroquis, g: number): Prisma {
+  const f = focoRayos(el);
+  const s = (el.hazAmplitud ?? 0.5) / 2;
+  const yFin = el.alto / 2 + alcanceHaz(el, d);
+  const zb = Math.max(0.005, f.z - s);
+  return {
+    pts: [f.p, aMundo({ x: s, y: yFin }, el.p, el.ang), aMundo({ x: -s, y: yFin }, el.p, el.ang)],
+    z0: zb,
+    z1: f.z + s,
+    corte: [false, false, false],
+    color: AMARILLO_HAZ,
+    luzLados: [0, 0],
+    luzTapa: 0,
+    borde: '#ca8a04',
+    prof: 0,
+    dibujo: (ctx, pelo) => {
+      const alfa = 1 - (el.hazTransparencia ?? 60) / 100;
+      // Campo cuadrado (vertical) al final del recorrido, centrado a la altura del foco
+      const za = f.z + s;
+      const ext = (x: number, z: number) => aIso(aMundo({ x, y: yFin }, el.p, el.ang), z, g);
+      const base = [ext(-s, zb), ext(s, zb), ext(s, za), ext(-s, za)];
+      const apice = aIso(f.p, f.z, g);
+      const camino = (qs: Pt[]) => {
+        ctx.beginPath();
+        qs.forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)));
+        ctx.closePath();
+      };
+      ctx.save();
+      ctx.lineJoin = 'round';
+      ctx.globalAlpha = alfa * 0.6;
+      ctx.fillStyle = AMARILLO_HAZ;
+      camino(base);
+      ctx.fill();
+      ctx.globalAlpha = alfa * 0.45;
+      for (let i = 0; i < 4; i++) {
+        camino([apice, base[i], base[(i + 1) % 4]]);
+        ctx.fill();
+      }
+      ctx.globalAlpha = Math.min(1, alfa + 0.25);
+      ctx.strokeStyle = '#ca8a04';
+      ctx.lineWidth = pelo;
+      for (let i = 0; i < 4; i++) {
+        ctx.beginPath();
+        ctx.moveTo(apice.x, apice.y);
+        ctx.lineTo(base[i].x, base[i].y);
+        ctx.stroke();
+      }
+      camino(base);
+      ctx.stroke();
+      ctx.restore();
+    },
+  };
 }
 
 /** Recorta un polígono convexo con el semiplano dot(p, u) >= k. */
@@ -688,6 +749,7 @@ export function dibujarIsometrico(ctx: CanvasRenderingContext2D, d: DatosCroquis
   // 2. Volúmenes, de atrás hacia adelante
   const prismas = prismasMuros(muros, aberturas, iso);
   for (const el of todos) if (el.tipo === 'mueble' && alturaMueble(el) > 0.05) prismas.push(...prismasMueble(el));
+  for (const el of todos) if (el.tipo === 'mueble' && el.haz && tieneHaz(el.clave)) prismas.push(prismaHaz(el, d, g));
   for (const p of prismas) {
     const c = p.pts.reduce((s, q) => ({ x: s.x + q.x / p.pts.length, y: s.y + q.y / p.pts.length }), { x: 0, y: 0 });
     const r = girar(c, g);
@@ -695,7 +757,7 @@ export function dibujarIsometrico(ctx: CanvasRenderingContext2D, d: DatosCroquis
   }
   ordenarPrismas(prismas, g);
   const frontales = iso.transparencia > 0 ? prismas.filter((p) => (p.frontal = esFrontal(p, muros, g))) : [];
-  for (const p of prismas) if (!p.frontal) dibujarPrisma(ctx, p, g, pelo);
+  for (const p of prismas) if (!p.frontal) (p.dibujo ? p.dibujo(ctx, pelo) : dibujarPrisma(ctx, p, g, pelo));
   if (frontales.length) {
     // Planta de los muros frontales en el piso: queda como la franja del corte, como en un plano
     ctx.save();
@@ -731,56 +793,6 @@ export function dibujarIsometrico(ctx: CanvasRenderingContext2D, d: DatosCroquis
     ctx.save();
     ctx.globalAlpha = Math.max(0.55, 1 - iso.transparencia);
     for (const p of frontales) dibujarPrisma(ctx, p, g, pelo, 'bordes');
-    ctx.restore();
-  }
-
-  // Haz de rayos X: pirámide amarilla translúcida desde el tubo hasta el piso
-  for (const el of todos) {
-    if (el.tipo !== 'mueble' || !el.haz || !tieneHaz(el.clave)) continue;
-    const f = focoRayos(el);
-    const s = (el.hazAmplitud ?? 0.5) / 2;
-    // El haz llega a la superficie que haya debajo del tubo (la mesa, si está ahí) o al piso
-    let zFin = 0;
-    for (const o of todos) {
-      if (o === el || o.tipo !== 'mueble' || !enPoligono(f.p, contorno(o))) continue;
-      const hz = alturaMueble(o);
-      if (hz < f.z - 0.05) zFin = Math.max(zFin, hz);
-    }
-    const alfa = 1 - (el.hazTransparencia ?? 60) / 100;
-    const base = [
-      { x: -s, y: -s },
-      { x: s, y: -s },
-      { x: s, y: s },
-      { x: -s, y: s },
-    ].map((q) => aIso(aMundo(q, f.p, el.ang), zFin + 0.005, g));
-    const apice = aIso(f.p, f.z, g);
-    const camino = (qs: Pt[]) => {
-      ctx.beginPath();
-      qs.forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)));
-      ctx.closePath();
-    };
-    ctx.save();
-    ctx.lineJoin = 'round';
-    ctx.globalAlpha = alfa * 0.6;
-    ctx.fillStyle = AMARILLO_HAZ;
-    camino(base);
-    ctx.fill();
-    ctx.globalAlpha = alfa * 0.45;
-    for (let i = 0; i < 4; i++) {
-      camino([apice, base[i], base[(i + 1) % 4]]);
-      ctx.fill();
-    }
-    ctx.globalAlpha = Math.min(1, alfa + 0.25);
-    ctx.strokeStyle = '#ca8a04';
-    ctx.lineWidth = pelo;
-    for (let i = 0; i < 4; i++) {
-      ctx.beginPath();
-      ctx.moveTo(apice.x, apice.y);
-      ctx.lineTo(base[i].x, base[i].y);
-      ctx.stroke();
-    }
-    camino(base);
-    ctx.stroke();
     ctx.restore();
   }
 

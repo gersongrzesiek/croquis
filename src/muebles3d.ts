@@ -42,9 +42,9 @@ export interface Pieza {
   corte?: boolean[];
 }
 
-/** Punto de salida del haz de rayos X (centro de la cara inferior del tubo), en el plano y su altura. */
+/** Punto de salida del haz de rayos X (centro de la cara frontal del tubo), en el plano y su altura. */
 export function focoRayos(el: Mueble): { p: Pt; z: number } {
-  return { p: aMundo({ x: 0, y: el.alto / 2 - 0.15 }, el.p, el.ang), z: 1.15 };
+  return { p: aMundo({ x: 0, y: el.alto / 2 }, el.p, el.ang), z: 1.3 };
 }
 
 /** Piezas que forman el mueble. Una lista vacía significa que va plano en el piso (señales, coladeras…). */

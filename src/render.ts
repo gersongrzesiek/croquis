@@ -1,7 +1,8 @@
 import { dibujarSimbolo } from './catalogo';
 import { contorno, posEtiqueta } from './elementos';
-import { areaPoligono, dist, formatoM } from './geometria';
-import type { Abertura, Area, DatosCroquis, Elemento, Muro, Patron, Pt } from './modelo';
+import { alturaModelo, focoRayos } from './muebles3d';
+import { aMundo, areaPoligono, dist, enPoligono, formatoM } from './geometria';
+import type { Abertura, Area, DatosCroquis, Elemento, Mueble, Muro, Patron, Pt } from './modelo';
 
 /** pantalla = mundo * escala + o */
 export interface Vista {
@@ -83,6 +84,26 @@ export const AMARILLO_HAZ = '#facc15';
 
 /** Muebles que pueden mostrar el haz de rayos X. */
 export const tieneHaz = (clave: string) => clave === 'tubo-rx';
+
+/**
+ * Largo (m) del haz de rayos X hacia el frente del tubo: llega hasta el primer muro o mueble alto
+ * (bucky de pared, mampara…) que encuentre; si no hay nada en 6 m, 1.8 m (distancia foco-receptor usual).
+ */
+export function alcanceHaz(el: Mueble, d: DatosCroquis): number {
+  const f = focoRayos(el);
+  const frente = aMundo({ x: 0, y: el.alto / 2 + 1 }, el.p, el.ang);
+  const dir = { x: frente.x - f.p.x, y: frente.y - f.p.y };
+  const muros = poligonosMuros(d.elementos.filter((e): e is Muro => e.tipo === 'muro')).map((m) => m.pts as Pt[]);
+  const obstaculos = d.elementos
+    .filter((o): o is Mueble => o.tipo === 'mueble' && o !== el && alturaModelo(o) > f.z - 0.3)
+    .map((o) => contorno(o))
+    .filter((c) => !enPoligono(f.p, c));
+  for (let t = 0.02; t <= 6; t += 0.02) {
+    const q = { x: f.p.x + dir.x * t, y: f.p.y + dir.y * t };
+    if (muros.some((m) => enPoligono(q, m)) || obstaculos.some((c) => enPoligono(q, c))) return Math.max(0.05, t - 0.02);
+  }
+  return 1.8;
+}
 
 /** Escribe texto con tamaño en metros sin depender de fuentes < 1px. */
 export function textoMundo(
@@ -334,18 +355,24 @@ export function dibujarElemento(ctx: CanvasRenderingContext2D, el: Elemento, d: 
       ctx.rotate(el.ang);
       dibujarSimbolo(ctx, el.clave, el.ancho, el.alto, el.color, 0.02);
       if (el.haz && tieneHaz(el.clave)) {
-        // Campo del haz de rayos X sobre el piso, bajo el tubo
-        const s = el.hazAmplitud ?? 0.5;
-        const cy = el.alto / 2 - 0.15;
+        // Haz de rayos X visto desde arriba: abanico que sale del frente del tubo
+        const s = (el.hazAmplitud ?? 0.5) / 2;
+        const y0 = el.alto / 2;
+        const y1 = y0 + alcanceHaz(el, d);
         ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(0, y0);
+        ctx.lineTo(s, y1);
+        ctx.lineTo(-s, y1);
+        ctx.closePath();
         ctx.globalAlpha = 1 - (el.hazTransparencia ?? 60) / 100;
         ctx.fillStyle = AMARILLO_HAZ;
-        ctx.fillRect(-s / 2, cy - s / 2, s, s);
+        ctx.fill();
         ctx.globalAlpha = 1;
         ctx.strokeStyle = '#ca8a04';
         ctx.lineWidth = 0.015;
         ctx.setLineDash([0.05, 0.035]);
-        ctx.strokeRect(-s / 2, cy - s / 2, s, s);
+        ctx.stroke();
         ctx.restore();
       }
       if (el.etiqueta) {
