@@ -68,6 +68,8 @@ export interface Mueble extends Base {
   hazAmplitud?: number;
   /** Transparencia del haz en % (60 por defecto). */
   hazTransparencia?: number;
+  /** Alcance del haz desde el frente del tubo, en metros. Sin valor, llega solo hasta el primer muro o mueble alto. */
+  hazDistancia?: number;
 }
 export interface Texto extends Base {
   tipo: 'texto';

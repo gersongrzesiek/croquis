@@ -24,7 +24,7 @@ import {
   type Texto,
   type Trazo,
 } from './modelo';
-import { dibujarEscena, tieneHaz, type Vista } from './render';
+import { alcanceHaz, dibujarEscena, tieneHaz, type Vista } from './render';
 
 
 export type Herramienta =
@@ -107,7 +107,7 @@ type Accion =
   | { k: 'pan'; sx: number; sy: number; ox: number; oy: number }
   | { k: 'girarIso'; sx: number; g0: number; pivote: Pt; pantalla: Pt; movido: boolean }
   | { k: 'mover'; ultimo: Pt; previo: string; movido: boolean }
-  | { k: 'manija'; id: string; cual: 'a' | 'b' | 'rot' | 'tam' | 'etq' | 'medio' | number; previo: string; vinculados: { el: Muro; extremo: 'a' | 'b' }[] }
+  | { k: 'manija'; id: string; cual: 'a' | 'b' | 'rot' | 'tam' | 'etq' | 'medio' | 'haz' | number; previo: string; vinculados: { el: Muro; extremo: 'a' | 'b' }[] }
   | { k: 'marco'; a: Pt; b: Pt; sumar: boolean }
   | { k: 'nuevo'; el: ConDosPuntos; inicio: Pt }
   | { k: 'cuarto'; a: Pt; b: Pt }
@@ -732,6 +732,20 @@ export class Editor {
           }));
           if (el.haz) {
             p.append(this.campoNum('Amplitud del campo (m)', el.hazAmplitud ?? 0.5, 0.1, 3, 0.05, (v) => (el.hazAmplitud = v)));
+            // Alcance: automático (hasta el primer muro o mueble alto) o fijo; también con la flecha doble del lienzo
+            const chkAuto = this.campoCheck('Automática (hasta el primer muro o mueble alto)', el.hazDistancia === undefined, (v) => {
+              if (v) delete el.hazDistancia;
+              else el.hazDistancia = Math.round(alcanceHaz(el, this.datos) * 100) / 100;
+              this.actualizarPanel();
+            });
+            p.append(
+              this.campoNum('Distancia del haz (m)', Math.round(alcanceHaz(el, this.datos) * 100) / 100, 0.2, 8, 0.05, (v) => {
+                el.hazDistancia = v;
+                const c = chkAuto.querySelector('input');
+                if (c) c.checked = false;
+              }),
+              chkAuto,
+            );
             const valor = h('span', { className: 'crq-valor', textContent: `${el.hazTransparencia ?? 60} %` });
             const r = h('input', { type: 'range', min: '0', max: '95', step: '5', value: String(el.hazTransparencia ?? 60) });
             r.addEventListener('input', () => {
@@ -1537,11 +1551,15 @@ export class Editor {
       const paso = ((Math.round(ang / (Math.PI / 4)) % 4) + 4) % 4;
       return ['ew-resize', 'nwse-resize', 'ns-resize', 'nesw-resize'][paso];
     }
+    if (m.cual === 'haz' && el?.tipo === 'mueble') {
+      const paso = (((Math.round((el.ang + Math.PI / 2) / (Math.PI / 4)) % 4) + 4) % 4);
+      return ['ew-resize', 'nwse-resize', 'ns-resize', 'nesw-resize'][paso];
+    }
     return m.cual === 'rot' ? 'grab' : 'move';
   }
 
   /** Manijas del elemento seleccionado (en coordenadas del mundo). */
-  private manijas(): { cual: 'a' | 'b' | 'rot' | 'tam' | 'etq' | 'medio' | number; p: Pt }[] {
+  private manijas(): { cual: 'a' | 'b' | 'rot' | 'tam' | 'etq' | 'medio' | 'haz' | number; p: Pt }[] {
     const sel = this.seleccionados();
     const cuarto = this.cuartoSeleccionado();
     if (sel.length !== 1 && !cuarto) return [];
@@ -1561,6 +1579,8 @@ export class Editor {
       return [
         { cual: 'rot', p: aMundo({ x: 0, y: -el.alto / 2 - this.tol(22) }, el.p, el.ang) },
         { cual: 'tam', p: aMundo({ x: el.ancho / 2, y: el.alto / 2 }, el.p, el.ang) },
+        // Alcance del haz de rayos X: al final del haz, se arrastra a lo largo de él
+        ...(el.haz && tieneHaz(el.clave) ? [{ cual: 'haz' as const, p: aMundo({ x: 0, y: el.alto / 2 + alcanceHaz(el, this.datos) }, el.p, el.ang) }] : []),
       ];
     }
     return [];
@@ -1901,6 +1921,10 @@ export class Editor {
         let ang = Math.atan2(p.y - el.p.y, p.x - el.p.x) + Math.PI / 2;
         if (!this.shift) ang = Math.round(ang / (Math.PI / 12)) * (Math.PI / 12);
         el.ang = normalizarAng(ang);
+      } else if (a.cual === 'haz') {
+        const l = puntoLocal(el, p).y - el.alto / 2;
+        const v = this.shift ? l : Math.round(l / 0.05) * 0.05;
+        el.hazDistancia = Math.round(Math.min(8, Math.max(0.2, v)) * 100) / 100;
       } else if (a.cual === 'tam') {
         const l = puntoLocal(el, p);
         const r = (v: number) => (this.iman ? Math.max(PASO_REJILLA, Math.round(v / PASO_REJILLA) * PASO_REJILLA) : Math.max(0.05, v));
@@ -2211,6 +2235,11 @@ export class Editor {
       if (m.cual === 'medio') {
         const el = this.seleccionados()[0];
         if (el?.tipo === 'muro') flechaDoble(ctx, s, Math.atan2(el.b.y - el.a.y, el.b.x - el.a.x) + Math.PI / 2);
+        continue;
+      }
+      if (m.cual === 'haz') {
+        const el = this.seleccionados()[0];
+        if (el?.tipo === 'mueble') flechaDoble(ctx, s, el.ang + Math.PI / 2);
         continue;
       }
       ctx.beginPath();

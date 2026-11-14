@@ -88,6 +88,7 @@ export const tieneHaz = (clave: string) => clave === 'tubo-rx';
 /**
  * Largo (m) del haz de rayos X hacia el frente del tubo: llega hasta el primer muro o mueble alto
  * (bucky de pared, mampara…) que encuentre; si no hay nada en 6 m, 1.8 m (distancia foco-receptor usual).
+ * Si el mueble tiene `hazDistancia`, se usa esa (recortada solo por los muros).
  */
 export function alcanceHaz(el: Mueble, d: DatosCroquis): number {
   const f = focoRayos(el);
@@ -98,11 +99,14 @@ export function alcanceHaz(el: Mueble, d: DatosCroquis): number {
     .filter((o): o is Mueble => o.tipo === 'mueble' && o !== el && alturaModelo(o) > f.z - 0.3)
     .map((o) => contorno(o))
     .filter((c) => !enPoligono(f.p, c));
-  for (let t = 0.02; t <= 6; t += 0.02) {
+  // Con un alcance fijado a mano, el haz solo se detiene antes si topa con un muro
+  const fijo = el.hazDistancia;
+  const tope = fijo ?? 6;
+  for (let t = 0.02; t <= tope + 1e-9; t += 0.02) {
     const q = { x: f.p.x + dir.x * t, y: f.p.y + dir.y * t };
-    if (muros.some((m) => enPoligono(q, m)) || obstaculos.some((c) => enPoligono(q, c))) return Math.max(0.05, t - 0.02);
+    if (muros.some((m) => enPoligono(q, m)) || (fijo === undefined && obstaculos.some((c) => enPoligono(q, c)))) return Math.max(0.05, t - 0.02);
   }
-  return 1.8;
+  return fijo ?? 1.8;
 }
 
 /** Escribe texto con tamaño en metros sin depender de fuentes < 1px. */
