@@ -4,7 +4,7 @@
  * Es solo una vista: se calcula a partir de los mismos datos del plano.
  */
 import { dibujarSimbolo } from './catalogo';
-import { alturaModelo, focoRayos, modeloMueble } from './muebles3d';
+import { alturaModelo, focoRayos, modeloMueble, type CaraMalla, type Material } from './muebles3d';
 import { cajaDeTodos, contorno, posEtiqueta, type Caja } from './elementos';
 import { aMundo, areaPoligono, dist, enPoligono } from './geometria';
 import type { Abertura, DatosCroquis, Elemento, Mueble, Muro, Norte, Pt } from './modelo';
@@ -359,7 +359,61 @@ function prismasMuros(muros: Muro[], aberturas: Abertura[], o: OpcionesIso): Pri
   return res;
 }
 
-function prismasMueble(el: Mueble): Prisma[] {
+/**
+ * Dibuja una superficie libre (caras planas en 3D): de atrás hacia adelante por la profundidad de
+ * cada cara, con la luz según hacia dónde mira. Sirve para piezas curvas en un plano vertical.
+ */
+function dibujarMalla(ctx: CanvasRenderingContext2D, caras: CaraMalla[], mat: Material, borde: string, giro: number, pelo: number) {
+  const orden = caras
+    .map((c) => {
+      const r = c.pts.map((q) => ({ ...girar(q.p, giro), z: q.z }));
+      // Normal (método de Newell), orientada hacia el observador
+      let nx = 0;
+      let ny = 0;
+      let nz = 0;
+      for (let i = 0; i < r.length; i++) {
+        const a = r[i];
+        const b = r[(i + 1) % r.length];
+        nx += (a.y - b.y) * (a.z + b.z);
+        ny += (a.z - b.z) * (a.x + b.x);
+        nz += (a.x - b.x) * (a.y + b.y);
+      }
+      const l = Math.hypot(nx, ny, nz) || 1;
+      const k = nx + ny + nz < 0 ? -1 / l : 1 / l;
+      const prof = r.reduce((s, q) => s + q.x + q.y + q.z, 0) / r.length;
+      return { c, nx: nx * k, ny: ny * k, nz: nz * k, prof };
+    })
+    .sort((a, b) => a.prof - b.prof);
+  ctx.save();
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = pelo;
+  for (const { c, nx, ny, nz } of orden) {
+    const h = Math.hypot(nx, ny) || 1;
+    const lado = mat.luzLados[0] + (mat.luzLados[1] - mat.luzLados[0]) * ((nx / h - ny / h + 1) / 2);
+    const luz = lado * (1 - Math.abs(nz)) + (nz > 0 ? mat.luzTapa : mat.luzLados[0]) * Math.abs(nz);
+    const relleno = aclarar(mat.color, luz);
+    const s = c.pts.map((q) => aIso(q.p, q.z, giro));
+    ctx.beginPath();
+    s.forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)));
+    ctx.closePath();
+    ctx.fillStyle = relleno;
+    ctx.strokeStyle = relleno;
+    ctx.fill();
+    ctx.stroke();
+    ctx.strokeStyle = borde;
+    ctx.beginPath();
+    for (let i = 0; i < s.length; i++) {
+      if (c.bordes && !c.bordes[i]) continue;
+      const b = s[(i + 1) % s.length];
+      ctx.moveTo(s[i].x, s[i].y);
+      ctx.lineTo(b.x, b.y);
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function prismasMueble(el: Mueble, g: number): Prisma[] {
   const res: Prisma[] = [];
   const simbolo = (ctx: CanvasRenderingContext2D) => {
     ctx.save();
@@ -381,6 +435,11 @@ function prismasMueble(el: Mueble): Prisma[] {
       liso: pz.liso,
     };
     const q = pz.pts;
+    if (pz.malla) {
+      const malla = pz.malla;
+      res.push({ ...base, pts: q, corte: q.map(() => false), dibujo: (ctx, pelo) => dibujarMalla(ctx, malla, pz.mat, el.color, g, pelo) });
+      continue;
+    }
     if (q.length !== 4 || pz.corte) {
       res.push({ ...base, pts: q, corte: pz.corte ?? q.map(() => false) });
       continue;
@@ -748,7 +807,7 @@ export function dibujarIsometrico(ctx: CanvasRenderingContext2D, d: DatosCroquis
 
   // 2. Volúmenes, de atrás hacia adelante
   const prismas = prismasMuros(muros, aberturas, iso);
-  for (const el of todos) if (el.tipo === 'mueble' && alturaMueble(el) > 0.05) prismas.push(...prismasMueble(el));
+  for (const el of todos) if (el.tipo === 'mueble' && alturaMueble(el) > 0.05) prismas.push(...prismasMueble(el, g));
   for (const el of todos) if (el.tipo === 'mueble' && el.haz && tieneHaz(el.clave)) prismas.push(prismaHaz(el, d, g));
   for (const p of prismas) {
     const c = p.pts.reduce((s, q) => ({ x: s.x + q.x / p.pts.length, y: s.y + q.y / p.pts.length }), { x: 0, y: 0 });

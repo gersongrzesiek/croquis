@@ -89,6 +89,7 @@ export const CSS = `
 .crq-botones{display:flex;flex-wrap:wrap;gap:8px}
 .crq-raiz .crq-botones button{border-color:var(--crq-borde-fuerte)}
 
+.crq-buscar input{padding-left:30px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:9px center}
 .crq-catalogo{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
 .crq-raiz .crq-catalogo button{flex-direction:column;height:auto;min-width:0;padding:8px 4px;font-size:12px;line-height:1.25;gap:4px;white-space:normal;text-align:center;overflow-wrap:anywhere;
   border-color:var(--crq-borde);color:var(--crq-sutil)}

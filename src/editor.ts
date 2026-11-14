@@ -165,6 +165,7 @@ export class Editor {
   private empalmar = true;
   private muebleClave = 'mesa';
   private categoria = 'general';
+  private busquedaMueble = '';
   private fantasmaAng = 0;
   private aberturaInvertir = false;
   private estilo = { color: '#111827', muro: '#374151', grosorMuro: 0.15, relleno: '#bfdbfe', patron: 'ninguno' as Patron, acceso: '#16a34a', fondoCuarto: '#ffffff', dobleHoja: false, chaflan: 1 };
@@ -442,33 +443,68 @@ export class Editor {
     }
     if (this.herr === 'mueble') {
       p.append(h('h3', { textContent: 'Mobiliario' }));
-      p.append(
-        this.campoSelect('Categoría', this.categoria, CATEGORIAS.map((c) => [c.id, c.nombre]), (v) => {
-          this.categoria = v;
-          const items = itemsDeCategoria(v);
-          if (!items.some((i) => i.clave === this.muebleClave)) this.muebleClave = items[0].clave;
-          this.actualizarPanel();
-        }, false),
-      );
-      const norma = CATEGORIAS.find((c) => c.id === this.categoria)?.norma;
-      if (norma) p.append(h('p', { textContent: `Mobiliario básico según ${norma}.` }));
+      // Buscador: filtra todo el catálogo sin rehacer el panel (así no se pierde el foco al escribir)
+      const buscar = h('input', { type: 'search', placeholder: 'Buscar mueble…', value: this.busquedaMueble, autocomplete: 'off' });
+      p.append(h('label', { className: 'crq-campo crq-buscar' }, [buscar]));
+      const selCat = this.campoSelect('Categoría', this.categoria, CATEGORIAS.map((c) => [c.id, c.nombre]), (v) => {
+        this.categoria = v;
+        this.busquedaMueble = '';
+        const items = itemsDeCategoria(v);
+        if (!items.some((i) => i.clave === this.muebleClave)) this.muebleClave = items[0].clave;
+        this.actualizarPanel();
+      }, false);
+      p.append(selCat);
+      const nota = h('p', {});
+      p.append(nota);
       const cat = h('div', { className: 'crq-catalogo' });
-      for (const it of itemsDeCategoria(this.categoria)) {
-        const c = h('canvas', { width: 128, height: 88 });
-        const g = c.getContext('2d')!;
-        const k = Math.min(100 / it.ancho, 64 / it.alto, 110);
-        g.translate(64, 44);
-        g.scale(k, k);
-        dibujarSimbolo(g, it.clave, it.ancho, it.alto, '#111827', 2.5 / k);
-        const b = h('button', { type: 'button', title: it.nombre, className: it.clave === this.muebleClave ? 'crq-activo' : '' }, [c, it.nombre]);
-        b.addEventListener('click', () => {
-          this.muebleClave = it.clave;
-          this.fantasmaAng = 0;
-          this.actualizarPanel();
-        });
-        cat.append(b);
-      }
       p.append(cat);
+      const sinAcentos = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+      const llenar = () => {
+        const q = sinAcentos(this.busquedaMueble.trim());
+        const norma = CATEGORIAS.find((c) => c.id === this.categoria)?.norma;
+        let items = itemsDeCategoria(this.categoria);
+        if (q) {
+          const palabras = q.split(/\s+/);
+          items = CATALOGO.filter((it) => palabras.every((w) => sinAcentos(it.nombre).includes(w)));
+          nota.textContent = items.length
+            ? `${items.length} ${items.length === 1 ? 'resultado' : 'resultados'} en todo el catálogo.`
+            : 'Ningún mueble coincide con la búsqueda.';
+        } else nota.textContent = norma ? `Mobiliario básico según ${norma}.` : '';
+        nota.hidden = !nota.textContent;
+        selCat.style.display = q ? 'none' : '';
+        cat.replaceChildren();
+        for (const it of items) {
+          const c = h('canvas', { width: 128, height: 88 });
+          const g = c.getContext('2d')!;
+          const k = Math.min(100 / it.ancho, 64 / it.alto, 110);
+          g.translate(64, 44);
+          g.scale(k, k);
+          dibujarSimbolo(g, it.clave, it.ancho, it.alto, '#111827', 2.5 / k);
+          const b = h('button', { type: 'button', title: it.nombre, className: it.clave === this.muebleClave ? 'crq-activo' : '' }, [c, it.nombre]);
+          b.addEventListener('click', () => {
+            this.muebleClave = it.clave;
+            this.fantasmaAng = 0;
+            cat.querySelectorAll('button').forEach((x) => x.classList.toggle('crq-activo', x === b));
+            this.dibujar();
+          });
+          cat.append(b);
+        }
+      };
+      buscar.addEventListener('input', () => {
+        this.busquedaMueble = buscar.value;
+        llenar();
+      });
+      buscar.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && buscar.value) {
+          e.stopPropagation();
+          buscar.value = '';
+          this.busquedaMueble = '';
+          llenar();
+        } else if (e.key === 'Enter') {
+          (cat.querySelector('button') as HTMLButtonElement | null)?.click();
+        }
+      });
+      llenar();
       return;
     }
     const info = HERRAMIENTAS.find((x) => x.h === this.herr)!;

@@ -57,6 +57,7 @@ export const CATALOGO: ItemCatalogo[] = [
   // Rayos X (NOM-229-SSA1-2002 y apéndice C de NOM-016-SSA3-2012)
   it('mesa-rx', 'Mesa con bucky', 0.8, 2.2),
   it('tubo-rx', 'Soporte de tubo de RX', 0.6, 0.6),
+  it('arco-c', 'Arco en C', 0.8, 2.0),
   it('bucky-vertical', 'Bucky vertical', 0.7, 0.35),
   it('consola', 'Consola de control', 1.0, 0.5),
   it('mampara', 'Mampara plomada', 1.0, 0.15),
@@ -119,7 +120,7 @@ export const CATEGORIAS: Categoria[] = [
     id: 'rayosx',
     nombre: 'Rayos X',
     norma: 'NOM-229-SSA1-2002',
-    claves: ['mesa-rx', 'tubo-rx', 'bucky-vertical', 'consola', 'mampara', 'mandiles', 'mastografo', 'panoramico', 'revelador', 'mesa-chasis', 'lampara-seg', 'luz-roja', 'senal-rad', 'vestidor', 'negatoscopio', 'banqueta', 'portasueros', 'bote-rpbi'],
+    claves: ['mesa-rx', 'tubo-rx', 'arco-c', 'bucky-vertical', 'consola', 'mampara', 'mandiles', 'mastografo', 'panoramico', 'revelador', 'mesa-chasis', 'lampara-seg', 'luz-roja', 'senal-rad', 'vestidor', 'negatoscopio', 'banqueta', 'portasueros', 'bote-rpbi'],
   },
   {
     id: 'alimentos',
@@ -452,6 +453,15 @@ export function dibujarSimbolo(ctx: CanvasRenderingContext2D, clave: string, w: 
     case 'mandiles':
       caja();
       for (const fx of [0.2, 0.4, 0.6, 0.8]) circ(X(fx), 0, m * 0.25);
+      break;
+    case 'arco-c':
+      // Carro atrás (base, cuerpo) y el arco en C hacia el frente, con el tubo y el detector
+      rect(0.02, 0.02, 0.96, 0.18, '#e5e7eb');
+      rect(0.1, 0.04, 0.8, 0.32);
+      rect(0.44, 0.36, 0.12, 0.3);
+      rect(0.2, 0.65, 0.6, 0.25);
+      circ(0, Y(0.775), m * 0.22);
+      letra('C', color, 0, Y(0.2), 0.8);
       break;
     case 'mastografo':
       caja();

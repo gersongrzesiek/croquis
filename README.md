@@ -17,7 +17,7 @@ Todo se dibuja en **metros**: los muros, puertas y muebles tienen medidas reales
 | Puerta / Ventana | `D` / `N` | Clic sobre un muro: se alinea sola. `F` cambia el lado hacia el que abre; en el panel se cambia ancho y bisagra. |
 | Puerta de doble abatimiento | `B` | Puerta de vaivén (abre a ambos lados). Opción **Doble puerta**: dos puertas que se juntan al centro, como en quirófanos. |
 | Área / sombreado | `A` | Arrastra un rectángulo o marca vértices y doble clic. Color de relleno, opacidad, patrón (rayado, cuadriculado, puntos), nombre y m². |
-| Mobiliario | `M` | Por categoría: **General**, **Hospitalario** (NOM-016-SSA3-2012), **Control de plagas** (NOM-232-SSA1-2009), **Rayos X** (NOM-229-SSA1-2002) y **Alimentos** (NOM-251-SSA1-2009). `R` gira 90°. |
+| Mobiliario | `M` | Por categoría: **General**, **Hospitalario** (NOM-016-SSA3-2012), **Control de plagas** (NOM-232-SSA1-2009), **Rayos X** (NOM-229-SSA1-2002) y **Alimentos** (NOM-251-SSA1-2009). El cuadro **Buscar mueble** filtra todo el catálogo por nombre (sin importar acentos; `Enter` toma el primero, `Esc` limpia). `R` gira 90°. |
 | Etiqueta | `T` | Texto libre con tamaño, color, negrita y ángulo. |
 | Acceso | `X` | Flecha con la leyenda "ACCESO" (editable). |
 | Cota | `K` | Línea de medida con la distancia en metros. |
@@ -76,7 +76,7 @@ npm run build:lib  # solo la librería
 src/modelo.ts      tipos de elementos (muro, puerta, área, mueble…) en metros
 src/render.ts      dibujo de la escena en un <canvas>
 src/isometrico.ts  vista isométrica (muros levantados, huecos de puertas y ventanas, orden de dibujo)
-src/muebles3d.ts   modelos 3D de cada mueble del catálogo, armados por piezas
+src/muebles3d.ts   modelos 3D de cada mueble del catálogo, armados por piezas (y mallas para piezas curvas como el arco en C)
 src/catalogo.ts    mobiliario y sus símbolos
 src/elementos.ts   cajas, detección de clic y movimiento de elementos
 src/editor.ts      interfaz, herramientas, panel de propiedades, historial

@@ -40,6 +40,17 @@ export interface Pieza {
   liso?: boolean;
   /** Lados que son uniones con otra pieza (sin línea de borde). Si se da, la pieza no se trocea. */
   corte?: boolean[];
+  /**
+   * Superficie libre (caras planas en 3D, en coordenadas del plano) para formas que no son
+   * extrusiones verticales, como el arco en C. `pts` queda como la huella que la contiene.
+   */
+  malla?: CaraMalla[];
+}
+
+export interface CaraMalla {
+  pts: { p: Pt; z: number }[];
+  /** Qué lados llevan línea de borde (por omisión, todos). */
+  bordes?: boolean[];
 }
 
 /** Punto de salida del haz de rayos X (centro de la cara frontal del tubo), en el plano y su altura. */
@@ -419,6 +430,60 @@ export function modeloMueble(el: Mueble): Pieza[] {
       cajaM(-0.06, -D / 2 + 0.16, 0.06, D / 2 - 0.05, 1.45, 1.55, MAT.blanco);
       cajaM(-0.18, D / 2 - 0.3, 0.18, D / 2, 1.15, 1.45, MAT.blanco);
       break;
+    case 'arco-c': {
+      // Arco en C móvil: carro con base y ruedas atrás, brazo horizontal y el arco hacia el frente
+      const yb = -D / 2;
+      cajaM(-W / 2, yb + 0.04, W / 2, yb + 0.36, 0, 0.13, MAT.oscuro);
+      cajaM(-W / 2, yb + 0.36, -W / 2 + 0.13, Math.min(D / 2 - 0.1, 0.25), 0, 0.1, MAT.oscuro);
+      cajaM(W / 2 - 0.13, yb + 0.36, W / 2, Math.min(D / 2 - 0.1, 0.25), 0, 0.1, MAT.oscuro);
+      for (const sx of [-1, 1]) {
+        cil(sx * (W / 2 - 0.065), yb + 0.1, 0.055, 0.055, 0, 0.11, MAT.negro, 8);
+        cil(sx * (W / 2 - 0.065), Math.min(D / 2 - 0.1, 0.25) - 0.05, 0.045, 0.045, 0, 0.09, MAT.negro, 8);
+      }
+      cajaM(-0.33, yb + 0.07, 0.33, yb + 0.71, 0.13, 0.32, MAT.metal);
+      cajaM(-0.32, yb + 0.08, 0.32, yb + 0.7, 0.32, 0.95, MAT.blanco);
+      cil(0, yb + 0.45, 0.07, 0.07, 0.95, 1.0, MAT.metal);
+      cajaM(-0.1, yb + 0.3, 0.1, -0.33, 1.0, 1.14, MAT.blanco);
+      cil(0.22, yb + 0.25, 0.025, 0.025, 0.95, 1.25, MAT.metal, 8);
+      cajaM(0.1, yb + 0.2, 0.34, yb + 0.26, 1.25, 1.45, MAT.oscuro);
+      // El arco: tramos en el plano vertical, abierto hacia el frente
+      const yc = 0.25;
+      const zc = 1.05;
+      const ro = 0.62;
+      const ri = 0.53;
+      const n = 32;
+      const t = 0.07;
+      const pt = (r: number, a: number, x: number) => ({ p: mundo(x, yc + r * Math.cos(a)), z: zc + r * Math.sin(a) });
+      const angulo = (i: number) => Math.PI / 3 + (i / n) * ((4 * Math.PI) / 3);
+      // Tramos agrupados de 4 en 4: cada grupo es una pieza para ordenarse con el resto
+      for (let g0 = 0; g0 < n; g0 += 4) {
+        const caras: CaraMalla[] = [];
+        let y0 = Infinity;
+        let y1 = -Infinity;
+        let z0 = Infinity;
+        let z1 = -Infinity;
+        for (let i = g0; i < g0 + 4; i++) {
+          const a0 = angulo(i);
+          const a1 = angulo(i + 1);
+          for (const [r, a] of [[ro, a0], [ro, a1], [ri, a0], [ri, a1]]) {
+            y0 = Math.min(y0, yc + r * Math.cos(a));
+            y1 = Math.max(y1, yc + r * Math.cos(a));
+            z0 = Math.min(z0, zc + r * Math.sin(a));
+            z1 = Math.max(z1, zc + r * Math.sin(a));
+          }
+          // Caras laterales (con borde solo en las curvas), superficie exterior e interior (sin bordes)
+          for (const x of [-t, t]) caras.push({ pts: [pt(ro, a0, x), pt(ro, a1, x), pt(ri, a1, x), pt(ri, a0, x)], bordes: [true, false, true, false] });
+          for (const r of [ro, ri]) caras.push({ pts: [pt(r, a0, -t), pt(r, a1, -t), pt(r, a1, t), pt(r, a0, t)], bordes: [false, false, false, false] });
+        }
+        for (const i of [0, n]) if (i === g0 || i === g0 + 4) caras.push({ pts: [pt(ro, angulo(i), -t), pt(ro, angulo(i), t), pt(ri, angulo(i), t), pt(ri, angulo(i), -t)] });
+        piezas.push({ pts: [mundo(-t, y0), mundo(t, y0), mundo(t, y1), mundo(-t, y1)], z0, z1, mat: MAT.blanco, malla: caras });
+      }
+      // Detector arriba y tubo abajo
+      cil(0, 0.56, 0.19, 0.19, 1.44, 1.52, MAT.metal);
+      cajaM(-0.22, 0.3, 0.22, 0.8, 1.52, 1.64, MAT.blanco);
+      cajaM(-0.2, 0.3, 0.2, 0.8, 0.3, 0.5, MAT.blanco);
+      break;
+    }
     case 'bucky-vertical':
       caja(0, 0, 1, 1, 0, 0.05, MAT.metal);
       caja(0.4, 0, 0.6, 0.35, 0.05, 2.0, MAT.blanco);
