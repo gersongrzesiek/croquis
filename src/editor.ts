@@ -4,7 +4,7 @@ import { inyectarEstilos } from './estilos';
 import { exportarPNG, type ImagenCroquis } from './exportar';
 import { aMundo, areaPoligono, dist, distBorde, enPoligono, formatoM, insetPoligono, lado, proyectar, recortarPoligono } from './geometria';
 import { ICONOS } from './iconos';
-import { ALTURA_MUROS, dibujarIsometrico, encuadreIso, opcionesIso } from './isometrico';
+import { ALTURA_MUROS, aIso, dibujarIsometrico, encuadreIso, opcionesIso } from './isometrico';
 import {
   datosVacios,
   normalizarDatos,
@@ -105,6 +105,7 @@ export interface ResultadoCroquis extends ImagenCroquis {
 
 type Accion =
   | { k: 'pan'; sx: number; sy: number; ox: number; oy: number }
+  | { k: 'girarIso'; sx: number; g0: number; pivote: Pt; pantalla: Pt; movido: boolean }
   | { k: 'mover'; ultimo: Pt; previo: string; movido: boolean }
   | { k: 'manija'; id: string; cual: 'a' | 'b' | 'rot' | 'tam' | 'etq' | 'medio' | number; previo: string; vinculados: { el: Muro; extremo: 'a' | 'b' }[] }
   | { k: 'marco'; a: Pt; b: Pt; sumar: boolean }
@@ -154,6 +155,9 @@ export class Editor {
   private historial: string[] = [];
   private rehechos: string[] = [];
   private accion: Accion | null = null;
+  /** Giro de la vista isométrica mientras se gira con el mouse (cuartos de vuelta, fraccionario). */
+  private giroVivo: number | null = null;
+  private animGiro = 0;
   private poli: { tipo: 'muro' | 'area'; puntos: Pt[] } | null = null;
   private cursor: Pt | null = null;
   private medida = '';
@@ -376,7 +380,7 @@ export class Editor {
     this.btnDeshacer.disabled = !this.historial.length;
     this.btnRehacer.disabled = !this.rehechos.length;
     if (this.isometrico) {
-      this.estado.innerHTML = '<b>Vista isométrica</b><span>Arrastra para mover la vista. Vuelve a Plano para editar.</span>';
+      this.estado.innerHTML = '<b>Vista isométrica</b><span>Arrastra para mover la vista; con el botón derecho (o Shift) la giras. Vuelve a Plano para editar.</span>';
       return;
     }
     const info = HERRAMIENTAS.find((x) => x.h === this.herr)!;
@@ -533,6 +537,49 @@ export class Editor {
     }
   }
 
+  // ───────────────────────── Giro libre de la vista isométrica ─────────────────────────
+
+  private empezarGiroIso(s: Pt) {
+    cancelAnimationFrame(this.animGiro);
+    const c = cajaDeTodos(this.datos.elementos.filter((e) => e.tipo !== 'norte'));
+    const pivote = c ? { x: (c.minx + c.maxx) / 2, y: (c.miny + c.maxy) / 2 } : { x: 0, y: 0 };
+    const g0 = this.giroVivo ?? opcionesIso(this.datos).giro;
+    const q = aIso(pivote, 0, g0);
+    const pantalla = { x: this.vista.ox + q.x * this.vista.escala, y: this.vista.oy + q.y * this.vista.escala };
+    this.accion = { k: 'girarIso', sx: s.x, g0, pivote, pantalla, movido: false };
+    this.canvas.style.cursor = 'grabbing';
+  }
+
+  /** Gira la vista dejando el centro del croquis en el mismo lugar de la pantalla. */
+  private ponerGiroVivo(giro: number, a: { pivote: Pt; pantalla: Pt }) {
+    this.giroVivo = giro;
+    const q = aIso(a.pivote, 0, giro);
+    this.vista.ox = a.pantalla.x - q.x * this.vista.escala;
+    this.vista.oy = a.pantalla.y - q.y * this.vista.escala;
+    this.dibujar();
+  }
+
+  /** Al soltar, la vista se acomoda al giro de 90° más cercano con una animación corta. */
+  private asentarGiroIso(a: { pivote: Pt; pantalla: Pt }) {
+    const desde = this.giroVivo ?? 0;
+    const hasta = Math.round(desde);
+    const t0 = performance.now();
+    const dur = 220;
+    const paso = (t: number) => {
+      const k = Math.min(1, (t - t0) / dur);
+      const e = 1 - (1 - k) ** 3;
+      this.ponerGiroVivo(desde + (hasta - desde) * e, a);
+      if (k < 1) {
+        this.animGiro = requestAnimationFrame(paso);
+        return;
+      }
+      this.giroVivo = null;
+      this.datos.opciones.giroIso = ((hasta % 4) + 4) % 4;
+      this.notificar();
+    };
+    this.animGiro = requestAnimationFrame(paso);
+  }
+
   private panelIsometrico() {
     const p = this.panel;
     const o = opcionesIso(this.datos);
@@ -540,7 +587,7 @@ export class Editor {
       h('h3', { textContent: 'Vista isométrica' }),
       h('p', {
         textContent:
-          'El plano en 3D, con los muros levantados y los muebles como volúmenes. Arrastra para mover la vista y usa la rueda para acercar. Para editar, vuelve a Plano.',
+          'El plano en 3D, con los muros levantados y los muebles como volúmenes. Arrastra para mover la vista, arrastra con el botón derecho (o Shift + arrastrar) para girarla y usa la rueda para acercar. Para editar, vuelve a Plano.',
       }),
     );
     const altura = h('input', { type: 'number', value: String(o.altura), min: '0.2', max: '6', step: '0.1' });
@@ -1575,7 +1622,11 @@ export class Editor {
     }
     if (this.punteros.size > 2) return;
     if (this.isometrico) {
-      // En la vista isométrica solo se mueve la vista
+      // En la vista isométrica solo se mueve o se gira la vista
+      if (e.button === 2 || (e.button === 0 && e.shiftKey)) {
+        this.empezarGiroIso(s);
+        return;
+      }
       if (e.button === 0 || e.button === 1) {
         this.accion = { k: 'pan', sx: s.x, sy: s.y, ox: this.vista.ox, oy: this.vista.oy };
         this.canvas.style.cursor = 'grabbing';
@@ -1730,6 +1781,13 @@ export class Editor {
     }
     if (this.isometrico) {
       const a = this.accion;
+      if (a?.k === 'girarIso') {
+        if (Math.abs(s.x - a.sx) > 2) a.movido = true;
+        // Media pantalla de arrastre (o 240 px) = un cuarto de vuelta
+        const paso = Math.max(240, this.canvas.getBoundingClientRect().width / 4);
+        this.ponerGiroVivo(a.g0 + (s.x - a.sx) / paso, a);
+        return;
+      }
       if (a?.k === 'pan') {
         this.vista.ox = a.ox + s.x - a.sx;
         this.vista.oy = a.oy + s.y - a.sy;
@@ -1864,6 +1922,11 @@ export class Editor {
     switch (a.k) {
       case 'pan':
         this.canvas.style.cursor = this.isometrico ? 'grab' : this.cursorHerramienta();
+        break;
+      case 'girarIso':
+        this.canvas.style.cursor = 'grab';
+        if (a.movido) this.asentarGiroIso(a);
+        else this.giroVivo = null;
         break;
       case 'mover':
         if (a.movido) {
@@ -2088,7 +2151,7 @@ export class Editor {
     const ctx = this.ctx;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     if (this.isometrico) {
-      dibujarIsometrico(ctx, this.datos, this.vista, { ancho: r.width, alto: r.height });
+      dibujarIsometrico(ctx, this.datos, this.vista, { ancho: r.width, alto: r.height, giro: this.giroVivo ?? undefined });
       return;
     }
     dibujarEscena(ctx, this.datos, this.vista, {

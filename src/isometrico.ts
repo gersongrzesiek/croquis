@@ -27,7 +27,7 @@ export function alturaMueble(el: Mueble): number {
 }
 
 export interface OpcionesIso {
-  /** Giro de la vista en cuartos de vuelta (0 a 3). */
+  /** Giro de la vista en cuartos de vuelta (0 a 3; fraccionario mientras se gira con el mouse). */
   giro: number;
   /** Altura de los muros en metros. */
   altura: number;
@@ -41,9 +41,16 @@ export function opcionesIso(d: DatosCroquis): OpcionesIso {
   return { giro: ((giro % 4) + 4) % 4, altura: d.opciones.alturaMuros ?? ALTURA_MUROS, transparencia: Math.min(1, Math.max(0, t)) };
 }
 
-/** Gira un punto del plano en cuartos de vuelta (exacto, sin errores de redondeo). */
+/** Gira un punto del plano en cuartos de vuelta: exacto en los giros enteros, con trigonometría en los intermedios. */
 function girar(p: Pt, giro: number): Pt {
-  switch (giro) {
+  const k = ((giro % 4) + 4) % 4;
+  if (Math.abs(k - Math.round(k)) > 1e-9) {
+    const a = (k * Math.PI) / 2;
+    const c = Math.cos(a);
+    const s = Math.sin(a);
+    return { x: p.x * c - p.y * s, y: p.x * s + p.y * c };
+  }
+  switch (Math.round(k) % 4) {
     case 1:
       return { x: -p.y, y: p.x };
     case 2:
@@ -565,7 +572,7 @@ function esFrontal(p: Prisma, muros: Muro[], giro: number): boolean {
   const n = p.pts.length;
   const c = p.pts.reduce((s, q) => ({ x: s.x + q.x / n, y: s.y + q.y / n }), { x: 0, y: 0 });
   // Dirección hacia el observador, en coordenadas del plano
-  const d = girar({ x: Math.SQRT1_2, y: Math.SQRT1_2 }, (4 - giro) % 4);
+  const d = girar({ x: Math.SQRT1_2, y: Math.SQRT1_2 }, -giro);
   const o = { x: c.x + d.x * (m.grosor * 0.75 + 0.05), y: c.y + d.y * (m.grosor * 0.75 + 0.05) };
   for (const w of muros) {
     if (w === m) continue;
@@ -703,6 +710,8 @@ export interface OpcionesDibujoIso {
   ancho: number;
   alto: number;
   fondo?: string;
+  /** Giro en cuartos de vuelta, puede ser fraccionario (mientras se gira con el mouse). */
+  giro?: number;
 }
 
 /**
@@ -775,6 +784,7 @@ function rosaIso(ctx: CanvasRenderingContext2D, n: Norte, giro: number, ancho: n
 export function dibujarIsometrico(ctx: CanvasRenderingContext2D, d: DatosCroquis, v: Vista, o: OpcionesDibujoIso) {
   const fondo = o.fondo ?? '#ffffff';
   const iso = opcionesIso(d);
+  if (o.giro !== undefined) iso.giro = o.giro;
   const g = iso.giro;
   const todos = ordenar(d.elementos);
   const muros = todos.filter((e): e is Muro => e.tipo === 'muro');
