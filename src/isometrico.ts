@@ -539,6 +539,7 @@ function ordenarPrismas(prismas: Prisma[], giro: number) {
     const sx = r.map((q) => (q.x - q.y) * C);
     const sy = r.map((q) => (q.x + q.y) * S);
     return {
+      r,
       x0: Math.min(...xs),
       x1: Math.max(...xs),
       y0: Math.min(...ys),
@@ -555,6 +556,44 @@ function ordenarPrismas(prismas: Prisma[], giro: number) {
     const b = cajas[j];
     return a.x1 <= b.x0 + e || a.y1 <= b.y0 + e || prismas[i].z1 <= prismas[j].z0 + e;
   };
+  /**
+   * Piezas giradas (en diagonal): se busca una pared vertical que las separe usando las aristas de
+   * sus huellas. Devuelve [i no tapa a j, j no tapa a i], o null si no hay separación.
+   */
+  const separadas = (i: number, j: number): [boolean, boolean] | null => {
+    const ra = cajas[i].r;
+    const rb = cajas[j].r;
+    for (const poli of [ra, rb])
+      for (let k = 0; k < poli.length; k++) {
+        const p0 = poli[k];
+        const p1 = poli[(k + 1) % poli.length];
+        let nx = p0.y - p1.y;
+        let ny = p1.x - p0.x;
+        const l = Math.hypot(nx, ny);
+        if (l < 1e-9) continue;
+        nx /= l;
+        ny /= l;
+        let a0 = Infinity, a1 = -Infinity, b0 = Infinity, b1 = -Infinity;
+        for (const q of ra) {
+          const t = q.x * nx + q.y * ny;
+          if (t < a0) a0 = t;
+          if (t > a1) a1 = t;
+        }
+        for (const q of rb) {
+          const t = q.x * nx + q.y * ny;
+          if (t < b0) b0 = t;
+          if (t > b1) b1 = t;
+        }
+        // Normal de i hacia j; el observador mira desde +x+y
+        let haciaJ: number;
+        if (a1 <= b0 + e) haciaJ = nx + ny;
+        else if (b1 <= a0 + e) haciaJ = -(nx + ny);
+        else continue;
+        if (Math.abs(haciaJ) < 1e-6) return [true, true];
+        return haciaJ > 0 ? [true, false] : [false, true];
+      }
+    return null;
+  };
   const despues: number[][] = prismas.map(() => []);
   const grado = new Array(n).fill(0);
   for (let i = 0; i < n; i++) {
@@ -564,10 +603,20 @@ function ordenarPrismas(prismas: Prisma[], giro: number) {
       // Solo importa el orden si se enciman en pantalla
       if (a.px1 <= b.px0 + e || b.px1 <= a.px0 + e || a.py1 <= b.py0 + e || b.py1 <= a.py0 + e) continue;
       let primero: number;
-      const ij = detras(i, j);
-      const ji = detras(j, i);
-      if (ij && !ji) primero = i;
-      else if (ji && !ij) primero = j;
+      let ij = detras(i, j);
+      let ji = detras(j, i);
+      if (!ij || !ji) {
+        const sep = separadas(i, j);
+        if (sep) {
+          ij ||= sep[0];
+          ji ||= sep[1];
+        }
+      }
+      // Separadas en ambos sentidos (p. ej. una al lado y la otra debajo): ninguna tapa a la otra, así
+      // que no se fija orden; fijarlo armaría ciclos y la pieza de abajo acabaría encima.
+      if (ij && ji) continue;
+      if (ij) primero = i;
+      else if (ji) primero = j;
       else {
         const cmp = prismas[i].prof - prismas[j].prof || prismas[i].z0 - prismas[j].z0;
         primero = cmp <= 0 ? i : j;
@@ -879,7 +928,7 @@ export function dibujarIsometrico(ctx: CanvasRenderingContext2D, d: DatosCroquis
   for (const p of prismas) {
     const c = p.pts.reduce((s, q) => ({ x: s.x + q.x / p.pts.length, y: s.y + q.y / p.pts.length }), { x: 0, y: 0 });
     const r = girar(c, g);
-    p.prof = r.x + r.y;
+    p.prof = (r.x + r.y) * PX + ((p.z0 + p.z1) / 2) * PZ;
   }
   ordenarPrismas(prismas, g);
   const frontales = iso.transparencia > 0 ? prismas.filter((p) => (p.frontal = esFrontal(p, muros, g))) : [];

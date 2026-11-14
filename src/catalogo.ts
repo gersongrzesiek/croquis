@@ -142,6 +142,14 @@ export const itemsDeCategoria = (id: string) =>
  * `lw` es el grosor de línea en las mismas unidades.
  */
 export function dibujarSimbolo(ctx: CanvasRenderingContext2D, clave: string, w: number, h: number, color: string, lw: number) {
+  // Camas y mesas largas dibujadas más anchas que largas: el símbolo sigue el lado largo
+  if (w > h && ['cama-hosp', 'camilla', 'mesa-exploracion', 'mesa-quirurgica', 'mesa-rx'].includes(clave)) {
+    ctx.save();
+    ctx.rotate(Math.PI / 2);
+    dibujarSimbolo(ctx, clave, h, w, color, lw);
+    ctx.restore();
+    return;
+  }
   const x0 = -w / 2;
   const y0 = -h / 2;
   const m = Math.min(w, h);

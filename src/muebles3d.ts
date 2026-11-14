@@ -68,7 +68,12 @@ export function focoRayos(el: Mueble): { p: Pt; z: number } {
 }
 
 /** Piezas que forman el mueble. Una lista vacía significa que va plano en el piso (señales, coladeras…). */
+/** Muebles largos cuyo modelo va a lo largo (cabecera atrás, pies adelante). */
+export const LARGOS = new Set(['cama-hosp', 'camilla', 'mesa-exploracion', 'mesa-quirurgica', 'mesa-rx']);
+
 export function modeloMueble(el: Mueble): Pieza[] {
+  // Si se dibujó más ancho que largo, el modelo se gira para que siga el lado largo
+  if (LARGOS.has(el.clave) && el.ancho > el.alto) return modeloMueble({ ...el, ancho: el.alto, alto: el.ancho, ang: el.ang + Math.PI / 2 });
   const W = el.ancho;
   const D = el.alto;
   const m = Math.min(W, D);
@@ -465,7 +470,7 @@ export function modeloMueble(el: Mueble): Pieza[] {
       cajaM(-0.33, yb + 0.07, 0.33, yb + 0.71, 0.13, 0.32, MAT.metal);
       cajaM(-0.32, yb + 0.08, 0.32, yb + 0.7, 0.32, 0.95, MAT.blanco);
       cil(0, yb + 0.45, 0.07, 0.07, 0.95, 1.0, MAT.metal);
-      cajaM(-0.1, yb + 0.3, 0.1, -0.33, 1.0, 1.14, MAT.blanco);
+      cajaM(-0.1, yb + 0.3, 0.1, 0.25 - 0.62, 1.0, 1.14, MAT.blanco); // brazo hasta el lomo del arco
       cil(0.22, yb + 0.25, 0.025, 0.025, 0.95, 1.25, MAT.metal, 8);
       cajaM(0.1, yb + 0.2, 0.34, yb + 0.26, 1.25, 1.45, MAT.oscuro);
       // El arco: tramos en el plano vertical, abierto hacia el frente
