@@ -1,4 +1,4 @@
-import { CATALOGO, CATEGORIAS, dibujarSimbolo, itemPorClave, itemsDeCategoria } from './catalogo';
+import { CATALOGO, CATEGORIAS, DE_MURO, dibujarSimbolo, itemPorClave, itemsDeCategoria, type ItemCatalogo } from './catalogo';
 import { cajaDe, cajaDeTodos, mover, posEtiqueta, puntoLocal, puntosClave, toca } from './elementos';
 import { inyectarEstilos } from './estilos';
 import { exportarPNG, type ImagenCroquis } from './exportar';
@@ -1200,8 +1200,30 @@ export class Editor {
     };
   }
 
+  /**
+   * Pega una rejilla (u otro elemento de muro) a la cara del muro más cercano, del lado del cursor,
+   * con el fondo contra el muro. Devuelve false si no hay muro cerca.
+   */
+  private pegarAMuro(m: Mueble, p: Pt): boolean {
+    const w = this.colocarEnMuro(p, m.ancho);
+    if (!w) return false;
+    const nx = -Math.sin(w.ang);
+    const ny = Math.cos(w.ang);
+    const lado = (p.x - w.p.x) * nx + (p.y - w.p.y) * ny >= 0 ? 1 : -1;
+    const d = (w.grosor / 2 + m.alto / 2) * lado;
+    m.p = { x: w.p.x + nx * d, y: w.p.y + ny * d };
+    m.ang = normalizarAng(lado > 0 ? w.ang : w.ang + Math.PI);
+    return true;
+  }
+
   private nuevoMueble(p: Pt): Mueble {
     const it = itemPorClave(this.muebleClave) ?? CATALOGO[0];
+    const m = this.muebleLibre(it, p);
+    if (DE_MURO.has(it.clave)) this.pegarAMuro(m, p);
+    return m;
+  }
+
+  private muebleLibre(it: ItemCatalogo, p: Pt): Mueble {
     return {
       id: nuevoId(),
       tipo: 'mueble',
@@ -1783,9 +1805,12 @@ export class Editor {
         this.agregar(ab);
         return;
       }
-      case 'mueble':
-        this.agregar(this.nuevoMueble(p));
+      case 'mueble': {
+        const m = this.nuevoMueble(p);
+        if (DE_MURO.has(m.clave) && !this.pegarAMuro(m, p)) return this.aviso('La rejilla solo se coloca sobre un muro: haz clic junto a uno.');
+        this.agregar(m);
         return;
+      }
       case 'norte': {
         // Solo un norte por croquis: si ya existe, se mueve al nuevo punto
         const previo = this.datos.elementos.find((e): e is Norte => e.tipo === 'norte');
@@ -1887,6 +1912,13 @@ export class Editor {
           if (!a.movido && Math.hypot(dx, dy) < this.tol(3)) break;
           a.movido = true;
           const sel = this.seleccionados();
+          if (sel.length === 1 && sel[0].tipo === 'mueble' && DE_MURO.has(sel[0].clave)) {
+            // Las rejillas se deslizan por los muros
+            const mb = sel[0];
+            if (!this.pegarAMuro(mb, p)) mb.p = { x: p.x, y: p.y };
+            a.ultimo = p;
+            break;
+          }
           if (sel.length === 1 && (sel[0].tipo === 'puerta' || sel[0].tipo === 'ventana')) {
             const ab = sel[0];
             const m = this.colocarEnMuro(p, ab.ancho);

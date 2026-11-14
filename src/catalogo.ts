@@ -98,19 +98,21 @@ export const CATALOGO: ItemCatalogo[] = [
   it('bote-pedal', 'Bote con tapa y pedal', 0.45, 0.45),
   it('trampa-grasa', 'Trampa de grasa', 0.6, 0.4),
   it('coladera', 'Coladera', 0.25, 0.25),
+  it('rejilla-sup', 'Rejilla de ventilación superior', 0.6, 0.06),
+  it('rejilla-inf', 'Rejilla de ventilación inferior', 0.6, 0.06),
 ];
 
 export const CATEGORIAS: Categoria[] = [
   {
     id: 'general',
     nombre: 'General',
-    claves: ['mesa', 'mesa-trabajo', 'silla', 'escritorio', 'anaquel', 'mostrador', 'refrigerador', 'congelador', 'estufa', 'tarja', 'lavabo', 'wc', 'regadera', 'tarima', 'caja', 'extintor', 'botiquin', 'bote'],
+    claves: ['mesa', 'mesa-trabajo', 'silla', 'escritorio', 'anaquel', 'mostrador', 'refrigerador', 'congelador', 'estufa', 'tarja', 'lavabo', 'wc', 'regadera', 'tarima', 'caja', 'extintor', 'botiquin', 'bote', 'rejilla-sup', 'rejilla-inf'],
   },
   {
     id: 'hospitalario',
     nombre: 'Hospitalario',
     norma: 'NOM-016-SSA3-2012',
-    claves: ['cama-hosp', 'camilla', 'mesa-exploracion', 'mesa-quirurgica', 'transfer', 'transfer-barrera', 'lampara-quir', 'anestesia', 'mesa-mayo', 'mesa-rinon', 'mesa-pasteur', 'carro-rojo', 'carro-curacion', 'portasueros', 'lavabo-cirujano', 'lavabo', 'asiento-giratorio', 'banqueta', 'negatoscopio', 'bote-rpbi', 'bote'],
+    claves: ['cama-hosp', 'camilla', 'mesa-exploracion', 'mesa-quirurgica', 'transfer', 'transfer-barrera', 'lampara-quir', 'anestesia', 'mesa-mayo', 'mesa-rinon', 'mesa-pasteur', 'carro-rojo', 'carro-curacion', 'portasueros', 'lavabo-cirujano', 'lavabo', 'asiento-giratorio', 'banqueta', 'negatoscopio', 'bote-rpbi', 'bote', 'rejilla-sup', 'rejilla-inf'],
   },
   {
     id: 'plagas',
@@ -128,9 +130,12 @@ export const CATEGORIAS: Categoria[] = [
     id: 'alimentos',
     nombre: 'Alimentos',
     norma: 'NOM-251-SSA1-2009',
-    claves: ['mesa-inox', 'tarja-doble', 'lavamanos', 'estufa-ind', 'horno', 'freidora', 'campana', 'refrigerador', 'congelador', 'camara-fria', 'anaquel', 'tarima', 'bascula', 'bote-pedal', 'trampa-grasa', 'coladera'],
+    claves: ['mesa-inox', 'tarja-doble', 'lavamanos', 'estufa-ind', 'horno', 'freidora', 'campana', 'refrigerador', 'congelador', 'camara-fria', 'anaquel', 'tarima', 'bascula', 'bote-pedal', 'trampa-grasa', 'coladera', 'rejilla-sup', 'rejilla-inf'],
   },
 ];
+
+/** Elementos que solo se colocan sobre un muro, pegados a su cara. */
+export const DE_MURO = new Set(['rejilla-sup', 'rejilla-inf']);
 
 export const itemPorClave = (clave: string) => CATALOGO.find((i) => i.clave === clave);
 
@@ -351,6 +356,18 @@ export function dibujarSimbolo(ctx: CanvasRenderingContext2D, clave: string, w: 
       ctx.arc(X(0.75), Y(1), m * 0.12, 0, Math.PI);
       ctx.stroke();
       break;
+    case 'rejilla-sup':
+    case 'rejilla-inf': {
+      // Rejilla vista desde arriba: marco con lamas. La superior va punteada (queda arriba del corte).
+      if (clave === 'rejilla-sup') ctx.setLineDash([lw * 3, lw * 2]);
+      caja('#e5e7eb');
+      ctx.setLineDash([]);
+      ctx.lineWidth = lw * 0.6;
+      const n = Math.max(3, Math.round(w / 0.08));
+      for (let i = 1; i < n; i++) linea(X(i / n), y0, X(i / n), y0 + h);
+      ctx.lineWidth = lw;
+      break;
+    }
     case 'transfer':
     case 'transfer-barrera': {
       // Barrera de acero de lado a lado del acceso, con una persona sentada encima cambiándose las botas

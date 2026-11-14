@@ -4,7 +4,7 @@
  * Es solo una vista: se calcula a partir de los mismos datos del plano.
  */
 import { dibujarSimbolo } from './catalogo';
-import { alturaModelo, fijarDetalle, focoRayos, modeloMueble, type CaraMalla, type Material } from './muebles3d';
+import { alturaModelo, fijarAlturaMuros, fijarDetalle, focoRayos, modeloMueble, type CaraMalla, type Material } from './muebles3d';
 import { cajaDeTodos, contorno, posEtiqueta, type Caja } from './elementos';
 import { aMundo, areaPoligono, dist, enPoligono } from './geometria';
 import type { Abertura, DatosCroquis, Elemento, Mueble, Muro, Norte, Pt } from './modelo';
@@ -67,6 +67,7 @@ export function opcionesIso(d: DatosCroquis): OpcionesIso {
     elevacion: Math.min(90, Math.max(5, d.opciones.elevacionIso ?? ELEVACION_ISO)),
   };
   usarElevacion(o.elevacion);
+  fijarAlturaMuros(o.altura);
   return o;
 }
 

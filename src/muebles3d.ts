@@ -358,13 +358,50 @@ export function modeloMueble(el: Mueble): Pieza[] {
       caja(0.15, 0.05, 0.85, 0.2, 1.03, 1.45, MAT.oscuro);
       caja(0.18, 0.2, 0.82, 0.21, 1.08, 1.4, MAT.cristal);
       break;
-    case 'mesa-mayo':
-      caja(0.5, 0.55, 1, 0.65, 0, 0.04, MAT.metal);
-      caja(0.5, 0.9, 1, 1, 0, 0.04, MAT.metal);
-      caja(0.8, 0.55, 0.9, 1, 0, 0.04, MAT.metal);
-      cilF(0.85, 0.75, 0.02, 0.02, 0.04, 0.95, MAT.metal, 8);
-      caja(0, 0, 1, 0.55, 0.95, 0.98, MAT.metal);
+    case 'mesa-mayo': {
+      // Base en U con ruedas, poste a un lado y charola en voladizo encima de la U
+      const r = Math.min(0.025, D * 0.06);
+      caja(0.04, 0.08, 1, 0.2, 0.05, 0.09, MAT.metal);
+      caja(0.04, 0.8, 1, 0.92, 0.05, 0.09, MAT.metal);
+      caja(0.84, 0.2, 0.96, 0.8, 0.05, 0.09, MAT.metal);
+      for (const [fx, fy] of [[0.1, 0.14], [0.1, 0.86], [0.9, 0.14], [0.9, 0.86]]) cilF(fx, fy, r, r, 0, 0.05, MAT.negro, 8);
+      cilF(0.9, 0.5, 0.025, 0.025, 0.09, 0.62, MAT.metal, 10);
+      cilF(0.9, 0.5, 0.034, 0.034, 0.6, 0.66, MAT.metal, 10);
+      cilF(0.9, 0.5, 0.017, 0.017, 0.66, 0.86, MAT.metal, 10);
+      caja(0.1, 0.44, 0.94, 0.56, 0.86, 0.89, MAT.metal);
+      // Charola con borde levantado
+      caja(0, 0, 1, 1, 0.89, 0.905, MAT.metal);
+      caja(0, 0, 1, 0.04, 0.905, 0.93, MAT.metal);
+      caja(0, 0.96, 1, 1, 0.905, 0.93, MAT.metal);
+      caja(0, 0.04, 0.03, 0.96, 0.905, 0.93, MAT.metal);
+      caja(0.97, 0.04, 1, 0.96, 0.905, 0.93, MAT.metal);
       break;
+    }
+    case 'rejilla-sup':
+    case 'rejilla-inf': {
+      // Rejilla de ventilación pegada al muro (el fondo, y = -D/2, va contra la cara del muro).
+      // La superior queda centrada a 4/5 de la altura del muro; la inferior, cerca del piso.
+      const H = 0.3;
+      let z0: number;
+      if (el.clave === 'rejilla-sup') z0 = Math.max(0.02, Math.min(alturaMuros * 0.8, alturaMuros - 0.05) - H / 2);
+      else z0 = 0.12;
+      const z1 = z0 + H;
+      const f = 0.025;
+      const yb = -D / 2;
+      const yf = D / 2;
+      cajaM(-W / 2 + f, yb, W / 2 - f, yb + D * 0.3, z0 + f, z1 - f, MAT.oscuro);
+      cajaM(-W / 2, yb, W / 2, yf, z1 - f, z1, MAT.blanco);
+      cajaM(-W / 2, yb, W / 2, yf, z0, z0 + f, MAT.blanco);
+      cajaM(-W / 2, yb, -W / 2 + f, yf, z0 + f, z1 - f, MAT.blanco);
+      cajaM(W / 2 - f, yb, W / 2, yf, z0 + f, z1 - f, MAT.blanco);
+      const n = Math.max(3, Math.round((H - 2 * f) / 0.035));
+      const paso = (H - 2 * f) / n;
+      for (let i = 0; i < n; i++) {
+        const zs = z0 + f + paso * i + paso * 0.3;
+        cajaM(-W / 2 + f, yb + D * 0.3, W / 2 - f, yf - D * 0.15, zs, zs + paso * 0.45, MAT.blanco);
+      }
+      break;
+    }
     case 'mesa-rinon': {
       // Banda en arco (forma de riñón): la curva abre hacia el frente
       const sag = D * 0.25;
@@ -657,6 +694,12 @@ function mallaTransfer(W: number, D: number, mundo: (x: number, y: number) => Pt
 }
 
 const cacheMallas = new Map<string, CaraMalla[]>();
+let alturaMuros = 2.5;
+/** Altura de los muros de la vista (para las rejillas, que van referidas al muro). */
+export function fijarAlturaMuros(h: number) {
+  alturaMuros = h;
+}
+
 let detalleBajo = false;
 /** Con detalle bajo, las superficies curvas llevan menos caras (para girar la vista con fluidez). */
 export function fijarDetalle(bajo: boolean) {
