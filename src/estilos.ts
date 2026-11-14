@@ -47,6 +47,13 @@ export const CSS = `
 .crq-raiz button.crq-alternar.crq-activo{color:var(--crq-texto)}
 .crq-raiz button.crq-alternar.crq-activo::before{background:var(--crq-acento-tinta);border-color:var(--crq-acento-tinta)}
 
+/* Selector de vista: plano o isométrico */
+.crq-segmento{display:inline-flex;gap:2px;padding:2px;border-radius:10px;background:var(--crq-hover);box-shadow:inset 0 0 0 1px var(--crq-borde)}
+.crq-raiz .crq-segmento button{height:28px;padding:0 10px;gap:6px;color:var(--crq-sutil);border-radius:8px}
+.crq-raiz .crq-segmento button:hover{color:var(--crq-texto)}
+.crq-raiz .crq-segmento button.crq-activo{background:var(--crq-panel);color:var(--crq-texto);box-shadow:0 1px 2px rgba(0,0,0,.08),inset 0 0 0 1px var(--crq-borde)}
+.crq-raiz .crq-segmento button.crq-activo svg{color:var(--crq-acento-tinta)}
+
 .crq-cuerpo{flex:1;display:flex;min-height:0}
 .crq-herr{flex:none;display:flex;flex-direction:column;gap:4px;padding:8px;background:var(--crq-panel);border-right:1px solid var(--crq-borde);overflow-y:auto}
 .crq-herr .crq-hueco{flex:none;height:1px;margin:4px 6px;background:var(--crq-borde)}

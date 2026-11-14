@@ -390,11 +390,11 @@ export function dibujarElemento(ctx: CanvasRenderingContext2D, el: Elemento, d: 
 const clavePt = (p: Pt) => `${Math.round(p.x * 1e4)},${Math.round(p.y * 1e4)}`;
 
 /**
- * Dibuja cada muro como un polígono. Donde los muros llegan a un punto en exactamente dos direcciones,
+ * Calcula el polígono de cada muro (4 esquinas). Donde los muros llegan a un punto en exactamente dos direcciones,
  * el extremo se corta en inglete sobre la bisectriz, aunque varios muros compartan cada dirección
  * (cuartos empalmados), para que las esquinas en diagonal queden limpias y sin picos.
  */
-function dibujarMuros(ctx: CanvasRenderingContext2D, muros: Muro[]) {
+export function poligonosMuros(muros: Muro[]): { m: Muro; pts: [Pt, Pt, Pt, Pt] }[] {
   type V = { x: number; y: number };
   const unit = (x: number, y: number): V => {
     const l = Math.hypot(x, y) || 1;
@@ -437,22 +437,27 @@ function dibujarMuros(ctx: CanvasRenderingContext2D, muros: Muro[]) {
       { x: lados[1].x - d.x * g, y: lados[1].y - d.y * g },
     ];
   };
-  const t = ctx.getTransform();
-  const pelo = 1 / (Math.hypot(t.a, t.b) || 1);
-  ctx.save();
-  ctx.lineJoin = 'miter';
+  const res: { m: Muro; pts: [Pt, Pt, Pt, Pt] }[] = [];
   for (const m of muros) {
     if (dist(m.a, m.b) < 1e-9) continue;
     const g = m.grosor / 2;
     const u = unit(m.b.x - m.a.x, m.b.y - m.a.y);
     const [a1, a2] = extremo(m.a, u, g);
     const [b1, b2] = extremo(m.b, { x: -u.x, y: -u.y }, g);
-    ctx.beginPath();
     // En b los lados quedan invertidos (la normal apunta al otro lado)
-    ctx.moveTo(a1.x, a1.y);
-    ctx.lineTo(b2.x, b2.y);
-    ctx.lineTo(b1.x, b1.y);
-    ctx.lineTo(a2.x, a2.y);
+    res.push({ m, pts: [a1, b2, b1, a2] });
+  }
+  return res;
+}
+
+function dibujarMuros(ctx: CanvasRenderingContext2D, muros: Muro[]) {
+  const t = ctx.getTransform();
+  const pelo = 1 / (Math.hypot(t.a, t.b) || 1);
+  ctx.save();
+  ctx.lineJoin = 'miter';
+  for (const { m, pts } of poligonosMuros(muros)) {
+    ctx.beginPath();
+    pts.forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)));
     ctx.closePath();
     ctx.fillStyle = m.color;
     ctx.fill();

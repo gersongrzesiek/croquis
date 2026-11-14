@@ -4,6 +4,7 @@ import { inyectarEstilos } from './estilos';
 import { exportarPNG, type ImagenCroquis } from './exportar';
 import { aMundo, areaPoligono, dist, distBorde, enPoligono, formatoM, insetPoligono, lado, proyectar, recortarPoligono } from './geometria';
 import { ICONOS } from './iconos';
+import { ALTURA_MUROS, dibujarIsometrico, encuadreIso, opcionesIso } from './isometrico';
 import {
   datosVacios,
   normalizarDatos,
@@ -136,6 +137,11 @@ export class Editor {
   private botonesHerr = new Map<Herramienta, HTMLButtonElement>();
   private btnDeshacer!: HTMLButtonElement;
   private btnRehacer!: HTMLButtonElement;
+  private botonesVista: { v: 'plano' | 'isometrico'; b: HTMLButtonElement }[] = [];
+  /** Interruptores que solo tienen sentido en el plano. */
+  private soloPlano: HTMLButtonElement[] = [];
+  /** Vista del plano guardada al pasar a la isométrica, para volver al mismo encuadre. */
+  private vistaPlano: Vista | null = null;
 
   datos: DatosCroquis;
   private vista: Vista = { escala: ESCALA_INICIAL, ox: 60, oy: 60 };
@@ -191,6 +197,12 @@ export class Editor {
       this.encuadrar();
     }
     this.cambiarHerramienta(this.herr);
+    this.aplicarModoVista();
+  }
+
+  /** ¿Se está viendo el croquis en isométrico? En esa vista no se edita. */
+  get isometrico() {
+    return this.datos.opciones.vista === 'isometrico';
   }
 
   destruir() {
@@ -214,6 +226,16 @@ export class Editor {
       this.boton('Ajustar', 'Ver todo el croquis', () => this.encuadrar()),
       h('span', { className: 'crq-sep' }),
     );
+    const segmento = h('div', { className: 'crq-segmento', role: 'group', ariaLabel: 'Vista' });
+    for (const [v, txt, titulo] of [
+      ['plano', 'Plano', 'Ver y editar el plano'],
+      ['isometrico', 'Isométrico', 'Ver el croquis en 3D, con los muros levantados'],
+    ] as const) {
+      const b = this.boton(ICONOS[v] + txt, titulo, () => this.cambiarVista(v));
+      this.botonesVista.push({ v, b });
+      segmento.append(b);
+    }
+    barra.append(segmento, h('span', { className: 'crq-sep' }));
     const alternar = (txt: string, titulo: string, get: () => boolean, set: (v: boolean) => void) => {
       const b = this.boton(txt, titulo, () => {
         set(!get());
@@ -223,6 +245,7 @@ export class Editor {
       }, 'crq-alternar');
       b.classList.toggle('crq-activo', get());
       b.setAttribute('aria-pressed', String(get()));
+      this.soloPlano.push(b);
       return b;
     };
     barra.append(
@@ -292,6 +315,44 @@ export class Editor {
     return b;
   }
 
+  /** Cambia entre el plano (editable) y la vista isométrica (solo para ver y exportar). */
+  cambiarVista(v: 'plano' | 'isometrico') {
+    if ((v === 'isometrico') === this.isometrico) return;
+    this.terminarPoli();
+    this.accion = null;
+    this.medida = '';
+    this.seleccion.clear();
+    if (v === 'isometrico') {
+      this.vistaPlano = { ...this.vista };
+      this.datos.opciones.vista = 'isometrico';
+      this.encuadrar();
+    } else {
+      this.datos.opciones.vista = 'plano';
+      if (this.vistaPlano) this.vista = this.vistaPlano;
+      else this.encuadrar();
+    }
+    this.aplicarModoVista();
+    this.actualizarPanel();
+    this.notificar();
+  }
+
+  private aplicarModoVista() {
+    const iso = this.isometrico;
+    this.raiz.classList.toggle('crq-modo-iso', iso);
+    for (const { v, b } of this.botonesVista) {
+      const activo = (v === 'isometrico') === iso;
+      b.classList.toggle('crq-activo', activo);
+      b.setAttribute('aria-pressed', String(activo));
+    }
+    for (const b of this.soloPlano) b.disabled = iso;
+    for (const b of this.botonesHerr.values()) b.disabled = iso;
+    this.canvas.style.cursor = iso ? 'grab' : this.cursorHerramienta();
+  }
+
+  private cursorHerramienta() {
+    return this.herr === 'mano' ? 'grab' : this.herr === 'seleccionar' ? 'default' : 'crosshair';
+  }
+
   private cambiarHerramienta(t: Herramienta) {
     this.terminarPoli();
     this.herr = t;
@@ -299,21 +360,25 @@ export class Editor {
     this.medida = '';
     for (const [k, b] of this.botonesHerr) b.classList.toggle('crq-activo', k === t);
     if (t !== 'seleccionar') this.seleccion.clear();
-    this.canvas.style.cursor = t === 'mano' ? 'grab' : t === 'seleccionar' ? 'default' : 'crosshair';
+    this.canvas.style.cursor = this.isometrico ? 'grab' : this.cursorHerramienta();
     this.actualizarPanel();
     this.actualizarEstado();
     this.dibujar();
   }
 
   private actualizarEstado() {
+    this.zoomTxt.textContent = `${Math.round((this.vista.escala / ESCALA_INICIAL) * 100)}%`;
+    this.btnDeshacer.disabled = !this.historial.length;
+    this.btnRehacer.disabled = !this.rehechos.length;
+    if (this.isometrico) {
+      this.estado.innerHTML = '<b>Vista isométrica</b><span>Arrastra para mover la vista. Vuelve a Plano para editar.</span>';
+      return;
+    }
     const info = HERRAMIENTAS.find((x) => x.h === this.herr)!;
     const partes = [`<b>${info.nombre}</b>`];
     if (this.medida) partes.push(`<span>Largo <b class="crq-cifra">${this.medida} m</b>, Enter para fijar</span>`);
     if (this.cursor) partes.push(`<span class="crq-cifra" style="margin-left:auto">x ${this.cursor.x.toFixed(2)}  y ${this.cursor.y.toFixed(2)} m</span>`);
     this.estado.innerHTML = partes.join('');
-    this.zoomTxt.textContent = `${Math.round((this.vista.escala / ESCALA_INICIAL) * 100)}%`;
-    this.btnDeshacer.disabled = !this.historial.length;
-    this.btnRehacer.disabled = !this.rehechos.length;
   }
 
   // ───────────────────────── Panel lateral ─────────────────────────
@@ -360,6 +425,7 @@ export class Editor {
     const p = this.panel;
     p.innerHTML = '';
     this.pendiente = null;
+    if (this.isometrico) return this.panelIsometrico();
     const sel = this.seleccionados();
     const cuarto = this.cuartoSeleccionado();
     if (cuarto) return this.panelPropiedades(cuarto);
@@ -425,6 +491,56 @@ export class Editor {
         h('p', { innerHTML: 'Ctrl+Z deshacer · Ctrl+Y rehacer<br>Supr borrar · Ctrl+D duplicar<br>Flechas mover · R girar<br>Rueda: zoom · Espacio+arrastrar: mover vista' }),
       );
     }
+  }
+
+  private panelIsometrico() {
+    const p = this.panel;
+    const o = opcionesIso(this.datos);
+    p.append(
+      h('h3', { textContent: 'Vista isométrica' }),
+      h('p', {
+        textContent:
+          'El plano en 3D, con los muros levantados y los muebles como volúmenes. Arrastra para mover la vista y usa la rueda para acercar. Para editar, vuelve a Plano.',
+      }),
+    );
+    const altura = h('input', { type: 'number', value: String(o.altura), min: '0.2', max: '6', step: '0.1' });
+    altura.addEventListener('input', () => {
+      const v = parseFloat(altura.value);
+      if (!Number.isFinite(v) || v < 0.2 || v > 6) return;
+      this.datos.opciones.alturaMuros = v;
+      this.notificar();
+    });
+    p.append(this.campo('Altura de los muros (m)', altura));
+    const muros = h('div', { className: 'crq-botones' });
+    for (const [txt, v] of [
+      ['Completa', ALTURA_MUROS],
+      ['Media', 1.2],
+      ['Baja', 0.4],
+    ] as const) {
+      const b = this.boton(txt, `Muros de ${v} m`, () => {
+        this.datos.opciones.alturaMuros = v;
+        altura.value = String(v);
+        this.notificar();
+      });
+      muros.append(b);
+    }
+    p.append(muros);
+    const giro = h('div', { className: 'crq-botones' });
+    const girar = (d: number) => {
+      this.datos.opciones.giroIso = (opcionesIso(this.datos).giro + d + 4) % 4;
+      this.notificar();
+      this.encuadrar();
+    };
+    giro.append(
+      this.boton(ICONOS.girarIzq + 'Girar', 'Girar la vista a la izquierda', () => girar(-1)),
+      this.boton(ICONOS.girarDer + 'Girar', 'Girar la vista a la derecha', () => girar(1)),
+    );
+    p.append(this.campo('Ver desde otro lado', giro));
+    p.append(
+      h('p', {
+        textContent: this.o.modo === 'modal' ? 'Al guardar, la imagen del croquis sale en esta vista.' : 'Descargar PNG guarda la imagen en esta vista.',
+      }),
+    );
   }
 
   private panelPropiedades(el: Elemento) {
@@ -755,6 +871,12 @@ export class Editor {
 
   encuadrar() {
     const r = this.canvas.getBoundingClientRect();
+    if (this.isometrico) {
+      if (r.width >= 10) this.vista = encuadreIso(this.datos, opcionesIso(this.datos), r.width, r.height, 40, MAX_ESCALA);
+      this.actualizarEstado();
+      this.dibujar();
+      return;
+    }
     const c = cajaDeTodos(this.datos.elementos);
     if (!c || r.width < 10) {
       this.vista = { escala: ESCALA_INICIAL, ox: 60, oy: 60 };
@@ -1331,7 +1453,7 @@ export class Editor {
       }
     }, { passive: false });
     c.addEventListener('dblclick', (e) => {
-      if (this.herr !== 'seleccionar') return;
+      if (this.herr !== 'seleccionar' || this.isometrico) return;
       const p = this.aMundo(this.enPantalla(e).x, this.enPantalla(e).y);
       const el = this.elementoEn(p);
       if (el && (el.tipo === 'texto' || el.tipo === 'area' || el.tipo === 'mueble' || el.tipo === 'acceso')) {
@@ -1370,6 +1492,14 @@ export class Editor {
       return;
     }
     if (this.punteros.size > 2) return;
+    if (this.isometrico) {
+      // En la vista isométrica solo se mueve la vista
+      if (e.button === 0 || e.button === 1) {
+        this.accion = { k: 'pan', sx: s.x, sy: s.y, ox: this.vista.ox, oy: this.vista.oy };
+        this.canvas.style.cursor = 'grabbing';
+      }
+      return;
+    }
     const p = this.aMundo(s.x, s.y);
     this.shift = e.shiftKey;
     if (e.button === 1 || this.espacio || this.herr === 'mano') {
@@ -1497,6 +1627,15 @@ export class Editor {
       this.dibujar();
       return;
     }
+    if (this.isometrico) {
+      const a = this.accion;
+      if (a?.k === 'pan') {
+        this.vista.ox = a.ox + s.x - a.sx;
+        this.vista.oy = a.oy + s.y - a.sy;
+        this.dibujar();
+      }
+      return;
+    }
     const p = this.aMundo(s.x, s.y);
     this.shift = e.shiftKey;
     this.cursor = p;
@@ -1619,7 +1758,7 @@ export class Editor {
     if (!a) return;
     switch (a.k) {
       case 'pan':
-        this.canvas.style.cursor = this.herr === 'mano' ? 'grab' : this.herr === 'seleccionar' ? 'default' : 'crosshair';
+        this.canvas.style.cursor = this.isometrico ? 'grab' : this.cursorHerramienta();
         break;
       case 'mover':
         if (a.movido) {
@@ -1690,6 +1829,17 @@ export class Editor {
       if (ctrl && k === 'y') {
         e.preventDefault();
         this.rehacer();
+        return;
+      }
+      if (this.isometrico) {
+        // La vista isométrica no se edita: solo zoom y Esc para volver al plano
+        if (ctrl) return;
+        if (k === '+' || k === '=') return this.zoom(1.25);
+        if (k === '-') return this.zoom(1 / 1.25);
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          this.cambiarVista('plano');
+        }
         return;
       }
       if (ctrl && k === 'd') {
@@ -1828,6 +1978,10 @@ export class Editor {
     const dpr = window.devicePixelRatio || 1;
     const ctx = this.ctx;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (this.isometrico) {
+      dibujarIsometrico(ctx, this.datos, this.vista, { ancho: r.width, alto: r.height });
+      return;
+    }
     dibujarEscena(ctx, this.datos, this.vista, {
       ancho: r.width,
       alto: r.height,
@@ -1940,7 +2094,7 @@ export class Editor {
     const fecha = new Date().toISOString().slice(0, 10);
     if (tipo === 'png') {
       a.href = this.imagen().png;
-      a.download = `croquis-${fecha}.png`;
+      a.download = this.isometrico ? `croquis-isometrico-${fecha}.png` : `croquis-${fecha}.png`;
     } else {
       a.href = URL.createObjectURL(new Blob([JSON.stringify(this.datos)], { type: 'application/json' }));
       a.download = `croquis-${fecha}.croquis.json`;

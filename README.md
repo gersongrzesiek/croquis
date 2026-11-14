@@ -25,6 +25,12 @@ Todo se dibuja en **metros**: los muros, puertas y muebles tienen medidas reales
 
 Otros atajos: `Ctrl+Z` / `Ctrl+Y` deshacer y rehacer, `Supr` borrar, `Ctrl+D` duplicar, flechas para mover 5 cm (`Shift` 50 cm), `Shift` al trazar fija ángulos de 45°. El **imán** ajusta a una rejilla de 5 cm y a las esquinas existentes; los muros se enderezan solos cerca de 0°/90°.
 
+## Vista isométrica
+
+El selector **Plano / Isométrico** de la barra superior muestra el croquis en 3D: los muros se levantan a una altura (2.5 m por defecto; en el panel hay atajos *Completa*, *Media* 1.2 m y *Baja* 0.4 m para ver el interior), las puertas y ventanas quedan como huecos en el muro y el mobiliario como volúmenes con su símbolo encima. Los botones **Girar** cambian el lado desde el que se ve. Es solo una vista: para editar se vuelve a **Plano** (o `Esc`).
+
+La vista elegida se guarda con el croquis (`datos.opciones.vista`, `alturaMuros`, `giroIso`), así que *Descargar PNG*, *Guardar croquis* y `Croquis.imagen()` entregan la imagen en esa vista. Para forzar una: `Croquis.imagen(datos, { vista: 'plano' })` o `{ vista: 'isometrico' }`. La imagen isométrica no lleva barra de escala.
+
 ## Integración en otra app (Actas Offline)
 
 `npm run build:lib` genera **`dist-lib/croquis.js`**: un solo archivo (~55 KB, sin dependencias) que define `window.Croquis`. Se puede pegar dentro de un `<script>` en el HTML de Actas Offline, igual que jsPDF.
@@ -66,6 +72,7 @@ npm run build:lib  # solo la librería
 ```
 src/modelo.ts      tipos de elementos (muro, puerta, área, mueble…) en metros
 src/render.ts      dibujo de la escena en un <canvas>
+src/isometrico.ts  vista isométrica (muros levantados, huecos de puertas y ventanas, muebles en volumen)
 src/catalogo.ts    mobiliario y sus símbolos
 src/elementos.ts   cajas, detección de clic y movimiento de elementos
 src/editor.ts      interfaz, herramientas, panel de propiedades, historial

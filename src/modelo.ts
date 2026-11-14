@@ -109,6 +109,12 @@ export interface DatosCroquis {
   opciones: {
     /** Muestra la longitud de cada muro. */
     medidasMuros: boolean;
+    /** Vista con la que se muestra y exporta el croquis (por defecto el plano). */
+    vista?: 'plano' | 'isometrico';
+    /** Altura de los muros en la vista isométrica, en metros (2.5 por defecto). */
+    alturaMuros?: number;
+    /** Giro de la vista isométrica en cuartos de vuelta (0 a 3). */
+    giroIso?: number;
   };
 }
 
