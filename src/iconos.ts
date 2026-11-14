@@ -12,7 +12,7 @@ export const ICONOS: Record<string, string> = {
   puerta2: svg('<path d="M2 10h2M16 10h2M4 10V3M16 10V3M4 3a7 7 0 017 7M16 3a7 7 0 00-6.5 7" /><path d="M4 10v7M16 10v7M4 17a7 7 0 007-7M16 17a7 7 0 01-6.5-7" stroke-dasharray="1.6 1.6"/>'),
   ventana: svg('<rect x="2.5" y="7" width="15" height="6"/><path d="M2.5 10h15"/>'),
   area: svg('<path d="M3 5l10-2 4 9-8 5-6-4z" fill="currentColor" fill-opacity=".25"/>'),
-  mueble: svg('<rect x="4" y="6.5" width="12" height="7"/><path d="M7 4h6M7 16h6"/>'),
+  mueble: svg('<path d="M6.5 2.5v15M6.5 10.5h8v7" stroke-width="1.8"/>'),
   texto: svg('<path d="M4 5h12M10 5v11M7.5 16h5"/>'),
   acceso: svg('<path d="M3 10h11"/><path d="M11 5.5l5 4.5-5 4.5z" fill="currentColor"/>'),
   cota: svg('<path d="M3 12h14M3 9v6M17 9v6M4.5 13.5l-3-3M18.5 13.5l-3-3"/>'),

@@ -62,6 +62,12 @@ export interface Mueble extends Base {
   etiqueta: string;
   /** Acomoda la etiqueta en varias líneas y achica la letra para que quepa dentro del mueble. */
   ajustarEtq?: boolean;
+  /** Equipo de rayos X: muestra el haz de radiación (amarillo). */
+  haz?: boolean;
+  /** Lado del campo del haz al llegar al piso, en metros (0.5 por defecto). */
+  hazAmplitud?: number;
+  /** Transparencia del haz en % (60 por defecto). */
+  hazTransparencia?: number;
 }
 export interface Texto extends Base {
   tipo: 'texto';

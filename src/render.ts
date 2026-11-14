@@ -78,6 +78,12 @@ function patron(ctx: CanvasRenderingContext2D, tipo: Patron, color: string): Can
   return p;
 }
 
+/** Color del haz de rayos X. */
+export const AMARILLO_HAZ = '#facc15';
+
+/** Muebles que pueden mostrar el haz de rayos X. */
+export const tieneHaz = (clave: string) => clave === 'tubo-rx';
+
 /** Escribe texto con tamaño en metros sin depender de fuentes < 1px. */
 export function textoMundo(
   ctx: CanvasRenderingContext2D,
@@ -327,6 +333,21 @@ export function dibujarElemento(ctx: CanvasRenderingContext2D, el: Elemento, d: 
       ctx.translate(el.p.x, el.p.y);
       ctx.rotate(el.ang);
       dibujarSimbolo(ctx, el.clave, el.ancho, el.alto, el.color, 0.02);
+      if (el.haz && tieneHaz(el.clave)) {
+        // Campo del haz de rayos X sobre el piso, bajo el tubo
+        const s = el.hazAmplitud ?? 0.5;
+        const cy = el.alto / 2 - 0.15;
+        ctx.save();
+        ctx.globalAlpha = 1 - (el.hazTransparencia ?? 60) / 100;
+        ctx.fillStyle = AMARILLO_HAZ;
+        ctx.fillRect(-s / 2, cy - s / 2, s, s);
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = '#ca8a04';
+        ctx.lineWidth = 0.015;
+        ctx.setLineDash([0.05, 0.035]);
+        ctx.strokeRect(-s / 2, cy - s / 2, s, s);
+        ctx.restore();
+      }
       if (el.etiqueta) {
         ctx.rotate(-el.ang);
         let texto = el.etiqueta;

@@ -30,6 +30,8 @@ Otros atajos: `Ctrl+Z` / `Ctrl+Y` deshacer y rehacer, `Supr` borrar, `Ctrl+D` du
 
 El selector **Plano / Isométrico** de la barra superior muestra el croquis en 3D: los muros se levantan a una altura (2.5 m por defecto; en el panel hay atajos *Completa*, *Media* 1.2 m y *Baja* 0.4 m para ver el interior), las puertas y ventanas quedan como huecos en el muro y el mobiliario con un modelo sencillo de cada mueble (mesas con patas, sillas con respaldo, camas con colchón y barandales, anaqueles con entrepaños, tarjas con llave, botes y extintores cilíndricos…). La **transparencia de muros frontales** (0 a 100 %) aclara los muros exteriores del lado de la vista, dejando su contorno y su franja en el piso, para ver el interior sin bajar la altura. Con **Medidas** activado, el largo de cada muro aparece sobre el muro, en su mismo plano. Los botones **Girar** cambian el lado desde el que se ve. Es solo una vista: para editar se vuelve a **Plano** (o `Esc`).
 
+El **Soporte de tubo de RX** tiene en su panel la opción **Haz de rayos X**: muestra el campo del haz en amarillo, con **amplitud** (lado del campo, 0.1 a 3 m) y **transparencia** ajustables. En el plano se ve como un recuadro punteado; en la vista isométrica, como una pirámide de luz que baja del tubo y se detiene sobre la mesa que tenga debajo.
+
 La vista elegida se guarda con el croquis (`datos.opciones.vista`, `alturaMuros`, `giroIso`, `transparenciaFrontal`), así que *Descargar PNG*, *Guardar croquis* y `Croquis.imagen()` entregan la imagen en esa vista. Para forzar una: `Croquis.imagen(datos, { vista: 'plano' })` o `{ vista: 'isometrico' }`. La imagen isométrica no lleva barra de escala.
 
 ## Integración en otra app (Actas Offline)

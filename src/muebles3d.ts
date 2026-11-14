@@ -38,6 +38,13 @@ export interface Pieza {
   simbolo?: boolean;
   /** Superficie curva (cilindro): sin aristas verticales entre sus caras. */
   liso?: boolean;
+  /** Lados que son uniones con otra pieza (sin línea de borde). Si se da, la pieza no se trocea. */
+  corte?: boolean[];
+}
+
+/** Punto de salida del haz de rayos X (centro de la cara inferior del tubo), en el plano y su altura. */
+export function focoRayos(el: Mueble): { p: Pt; z: number } {
+  return { p: aMundo({ x: 0, y: el.alto / 2 - 0.15 }, el.p, el.ang), z: 1.15 };
 }
 
 /** Piezas que forman el mueble. Una lista vacía significa que va plano en el piso (señales, coladeras…). */
@@ -280,12 +287,26 @@ export function modeloMueble(el: Mueble): Pieza[] {
       caja(0, 0, 1, 0.3, 0.6, 0.72, MAT.tapiz);
       caja(0, 0, 1, 0.16, 0.72, 0.9, MAT.tapiz);
       break;
-    case 'mesa-quirurgica':
-      caja(0.15, 0.35, 0.85, 0.8, 0, 0.08, MAT.metal);
-      cil(0, D * 0.08, m * 0.18, m * 0.18, 0.08, 0.72, MAT.metal, 12);
-      caja(0, 0, 1, 1, 0.72, 0.8, MAT.metal);
-      caja(0.02, 0.02, 0.98, 0.98, 0.8, 0.88, MAT.negro);
+    case 'mesa-quirurgica': {
+      // Base rectangular, columna, chasis de acero y colchón en secciones (cabeza, espalda, asiento, piernas)
+      caja(0.12, 0.38, 0.88, 0.78, 0, 0.12, MAT.metal);
+      caja(0.3, 0.3, 0.7, 0.38, 0, 0.08, MAT.metal);
+      cil(0, D * 0.02, m * 0.13, m * 0.13, 0.12, 0.62, MAT.metal, 14);
+      cil(0, D * 0.02, m * 0.17, m * 0.17, 0.42, 0.46, MAT.metal, 14);
+      caja(0.2, 0.3, 0.8, 0.72, 0.62, 0.72, MAT.metal);
+      const secciones: [number, number, number][] = [
+        [0, 0.13, -0.05],
+        [0.15, 0.42, 0],
+        [0.43, 0.5, 0],
+        [0.51, 0.66, 0],
+        [0.68, 1, 0],
+      ];
+      for (const [a, b, dz] of secciones) {
+        caja(0.03, a, 0.97, b, 0.72 + dz, 0.77 + dz, MAT.metal);
+        caja(0, a, 1, b, 0.77 + dz, 0.86 + dz, MAT.negro);
+      }
       break;
+    }
     case 'mesa-rx':
       caja(0.1, 0.25, 0.9, 0.4, 0, 0.7, MAT.blanco);
       caja(0.1, 0.6, 0.9, 0.75, 0, 0.7, MAT.blanco);
@@ -306,7 +327,50 @@ export function modeloMueble(el: Mueble): Pieza[] {
       cilF(0.85, 0.75, 0.02, 0.02, 0.04, 0.95, MAT.metal, 8);
       caja(0, 0, 1, 0.55, 0.95, 0.98, MAT.metal);
       break;
-    case 'mesa-rinon':
+    case 'mesa-rinon': {
+      // Banda en arco (forma de riñón): la curva abre hacia el frente
+      const sag = D * 0.25;
+      const banda = D * 0.72;
+      const R = (W * W) / 4 / (2 * sag) + sag / 2;
+      const cy = -D / 2 + R;
+      const amax = Math.asin(Math.min(1, W / 2 / R));
+      const N = 10;
+      const arco = (r: number, a: number) => ({ x: Math.sin(a) * r, y: cy - Math.cos(a) * r });
+      const segmentos = (r0: number, r1: number, z0: number, z1: number, mat: Material) => {
+        for (let i = 0; i < N; i++) {
+          const a0 = -amax + (2 * amax * i) / N;
+          const a1 = -amax + (2 * amax * (i + 1)) / N;
+          const q = [arco(r1, a0), arco(r1, a1), arco(r0, a1), arco(r0, a0)];
+          piezas.push({ pts: q.map((v) => mundo(v.x, v.y)), z0, z1, mat, corte: [false, i < N - 1, false, i > 0] });
+        }
+      };
+      const ro = R - 0.02;
+      const ri = R - banda + 0.02;
+      // Patas con ruedas en los extremos y al centro, por fuera y por dentro
+      for (const a of [-amax + 0.04, 0, amax - 0.04])
+        for (const r of [ro - 0.03, ri + 0.03]) {
+          const c = arco(r, a);
+          cil(c.x, c.y, 0.018, 0.018, 0.09, 0.95, MAT.metal, 8);
+          cil(c.x, c.y, 0.035, 0.035, 0, 0.07, MAT.negro, 8);
+        }
+      segmentos(R - banda, R, 0.3, 0.33, MAT.metal);
+      segmentos(R - banda, R, 0.85, 0.88, MAT.metal);
+      // Barandal en el borde de atrás y en los extremos
+      segmentos(R - 0.015, R, 0.88, 0.97, MAT.metal);
+      for (const s of [-1, 1]) {
+        const a = s * (amax - 0.01);
+        const p0 = arco(R - banda, a);
+        const p1 = arco(R, a);
+        const n = { x: Math.cos(a) * 0.008, y: Math.sin(a) * 0.008 };
+        piezas.push({
+          pts: [mundo(p0.x - n.x, p0.y - n.y), mundo(p1.x - n.x, p1.y - n.y), mundo(p1.x + n.x, p1.y + n.y), mundo(p0.x + n.x, p0.y + n.y)],
+          z0: 0.88,
+          z1: 0.97,
+          mat: MAT.metal,
+        });
+      }
+      break;
+    }
     case 'mesa-pasteur':
       mesa(0.85, MAT.metal, MAT.metal, 0.03, true);
       break;

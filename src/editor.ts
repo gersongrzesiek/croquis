@@ -24,7 +24,7 @@ import {
   type Texto,
   type Trazo,
 } from './modelo';
-import { dibujarEscena, type Vista } from './render';
+import { dibujarEscena, tieneHaz, type Vista } from './render';
 
 
 export type Herramienta =
@@ -641,6 +641,24 @@ export class Editor {
         p.append(this.campoNum('Fondo (m)', el.alto, 0.1, 20, 0.05, (v) => (el.alto = v)));
         p.append(this.campoNum('Ángulo (°)', Math.round((el.ang * 180) / Math.PI), -360, 360, 15, (v) => (el.ang = (v * Math.PI) / 180)));
         p.append(this.campoColor('Color', el.color, (c) => (el.color = c)));
+        if (tieneHaz(el.clave)) {
+          p.append(h('h3', { textContent: 'Haz de rayos X' }));
+          p.append(this.campoCheck('Mostrar el haz (amarillo)', !!el.haz, (v) => {
+            el.haz = v;
+            this.actualizarPanel();
+          }));
+          if (el.haz) {
+            p.append(this.campoNum('Amplitud del campo (m)', el.hazAmplitud ?? 0.5, 0.1, 3, 0.05, (v) => (el.hazAmplitud = v)));
+            const valor = h('span', { className: 'crq-valor', textContent: `${el.hazTransparencia ?? 60} %` });
+            const r = h('input', { type: 'range', min: '0', max: '95', step: '5', value: String(el.hazTransparencia ?? 60) });
+            r.addEventListener('input', () => {
+              valor.textContent = `${r.value} %`;
+              this.editar(() => (el.hazTransparencia = Number(r.value)), false);
+            });
+            r.addEventListener('change', () => this.editar(() => (el.hazTransparencia = Number(r.value)), true));
+            p.append(h('label', { className: 'crq-campo' }, [h('span', { className: 'crq-fila-etq' }, ['Transparencia del haz', valor]), r]));
+          }
+        }
         break;
       case 'texto': {
         const t = this.campoTexto('Texto', el.texto, (v) => (el.texto = v), true);

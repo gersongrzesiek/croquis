@@ -4,11 +4,11 @@
  * Es solo una vista: se calcula a partir de los mismos datos del plano.
  */
 import { dibujarSimbolo } from './catalogo';
-import { alturaModelo, modeloMueble } from './muebles3d';
-import { cajaDeTodos, posEtiqueta, type Caja } from './elementos';
-import { aMundo, areaPoligono, dist } from './geometria';
+import { alturaModelo, focoRayos, modeloMueble } from './muebles3d';
+import { cajaDeTodos, contorno, posEtiqueta, type Caja } from './elementos';
+import { aMundo, areaPoligono, dist, enPoligono } from './geometria';
 import type { Abertura, DatosCroquis, Elemento, Mueble, Muro, Norte, Pt } from './modelo';
-import { ajustarTexto, dibujarElemento, ordenar, poligonosMuros, textoMundo, type Vista } from './render';
+import { AMARILLO_HAZ, ajustarTexto, dibujarElemento, ordenar, poligonosMuros, textoMundo, tieneHaz, type Vista } from './render';
 
 /** Altura de muros por defecto, en metros. */
 export const ALTURA_MUROS = 2.5;
@@ -320,8 +320,8 @@ function prismasMueble(el: Mueble): Prisma[] {
       liso: pz.liso,
     };
     const q = pz.pts;
-    if (q.length !== 4) {
-      res.push({ ...base, pts: q, corte: q.map(() => false) });
+    if (q.length !== 4 || pz.corte) {
+      res.push({ ...base, pts: q, corte: pz.corte ?? q.map(() => false) });
       continue;
     }
     // Las cajas grandes se trocean para que se ordenen bien con los muros y otros muebles
@@ -731,6 +731,56 @@ export function dibujarIsometrico(ctx: CanvasRenderingContext2D, d: DatosCroquis
     ctx.save();
     ctx.globalAlpha = Math.max(0.55, 1 - iso.transparencia);
     for (const p of frontales) dibujarPrisma(ctx, p, g, pelo, 'bordes');
+    ctx.restore();
+  }
+
+  // Haz de rayos X: pirámide amarilla translúcida desde el tubo hasta el piso
+  for (const el of todos) {
+    if (el.tipo !== 'mueble' || !el.haz || !tieneHaz(el.clave)) continue;
+    const f = focoRayos(el);
+    const s = (el.hazAmplitud ?? 0.5) / 2;
+    // El haz llega a la superficie que haya debajo del tubo (la mesa, si está ahí) o al piso
+    let zFin = 0;
+    for (const o of todos) {
+      if (o === el || o.tipo !== 'mueble' || !enPoligono(f.p, contorno(o))) continue;
+      const hz = alturaMueble(o);
+      if (hz < f.z - 0.05) zFin = Math.max(zFin, hz);
+    }
+    const alfa = 1 - (el.hazTransparencia ?? 60) / 100;
+    const base = [
+      { x: -s, y: -s },
+      { x: s, y: -s },
+      { x: s, y: s },
+      { x: -s, y: s },
+    ].map((q) => aIso(aMundo(q, f.p, el.ang), zFin + 0.005, g));
+    const apice = aIso(f.p, f.z, g);
+    const camino = (qs: Pt[]) => {
+      ctx.beginPath();
+      qs.forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)));
+      ctx.closePath();
+    };
+    ctx.save();
+    ctx.lineJoin = 'round';
+    ctx.globalAlpha = alfa * 0.6;
+    ctx.fillStyle = AMARILLO_HAZ;
+    camino(base);
+    ctx.fill();
+    ctx.globalAlpha = alfa * 0.45;
+    for (let i = 0; i < 4; i++) {
+      camino([apice, base[i], base[(i + 1) % 4]]);
+      ctx.fill();
+    }
+    ctx.globalAlpha = Math.min(1, alfa + 0.25);
+    ctx.strokeStyle = '#ca8a04';
+    ctx.lineWidth = pelo;
+    for (let i = 0; i < 4; i++) {
+      ctx.beginPath();
+      ctx.moveTo(apice.x, apice.y);
+      ctx.lineTo(base[i].x, base[i].y);
+      ctx.stroke();
+    }
+    camino(base);
+    ctx.stroke();
     ctx.restore();
   }
 
