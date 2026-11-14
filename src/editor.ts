@@ -18,6 +18,7 @@ import {
   type Mueble,
   type Muro,
   type Norte,
+  type PuntoCardinal,
   type Patron,
   type Pt,
   type Texto,
@@ -63,7 +64,7 @@ const HERRAMIENTAS: { h: Herramienta; nombre: string; tecla: string; ayuda: stri
   { h: 'cota', nombre: 'Cota', tecla: 'K', ayuda: 'Arrastra entre dos puntos para acotar la distancia.', sep: true },
   { h: 'linea', nombre: 'Línea', tecla: 'L', ayuda: 'Arrastra para trazar una línea. Shift fija ángulos de 45°.' },
   { h: 'lapiz', nombre: 'Lápiz', tecla: 'P', ayuda: 'Dibujo a mano alzada.', sep: true },
-  { h: 'norte', nombre: 'Orientación', tecla: 'O', ayuda: 'Clic para colocar la N que indica el norte. Gira la flecha con su manija o escribe el ángulo en el panel. Solo hay una por croquis: un nuevo clic la mueve.' },
+  { h: 'norte', nombre: 'Orientación', tecla: 'O', ayuda: 'Clic para colocar la orientación (N, S, E u O) con su flecha. Gira la flecha con su manija o escribe el ángulo en el panel; la letra no gira. Solo hay una por croquis: un nuevo clic la mueve.' },
 ];
 
 /** Tinta azul de plano: selección, manijas y guías sobre el lienzo. */
@@ -651,8 +652,11 @@ export class Editor {
         break;
       }
       case 'norte':
-        p.append(h('p', { textContent: 'La flecha apunta al norte. Gírala con la manija redonda (Shift para giro libre) o escribe el ángulo: 0° es hacia arriba del plano y aumenta en el sentido del reloj.' }));
-        p.append(this.campoNum('Ángulo del norte (°)', Math.round((((el.ang * 180) / Math.PI) % 360 + 360) % 360), 0, 359, 1, (v) => (el.ang = normalizarAng((v * Math.PI) / 180))));
+        p.append(
+          this.campoSelect('Punto cardinal', el.punto ?? 'N', [['N', 'Norte (N)'], ['S', 'Sur (S)'], ['E', 'Este (E)'], ['O', 'Oeste (O)']], (v) => (el.punto = v as PuntoCardinal)),
+        );
+        p.append(h('p', { textContent: 'La flecha apunta hacia el punto elegido y la letra queda fija. Gira la flecha con la manija redonda (Shift para giro libre) o escribe el ángulo: 0° es hacia arriba del plano y aumenta en el sentido del reloj.' }));
+        p.append(this.campoNum('Ángulo de la flecha (°)', Math.round((((el.ang * 180) / Math.PI) % 360 + 360) % 360), 0, 359, 1, (v) => (el.ang = normalizarAng((v * Math.PI) / 180))));
         p.append(this.campoNum('Tamaño (m)', el.tam, 0.3, 5, 0.1, (v) => (el.tam = v)));
         break;
       case 'acceso':
@@ -2017,7 +2021,7 @@ export class Editor {
       if (this.herr === 'mueble') extras.push(this.nuevoMueble(this.cursor));
       if (this.herr === 'norte') {
         const previo = this.datos.elementos.find((e): e is Norte => e.tipo === 'norte');
-        extras.push({ id: '', tipo: 'norte', p: this.ajustar(this.cursor), ang: previo?.ang ?? 0, tam: previo?.tam ?? 1 });
+        extras.push({ id: '', tipo: 'norte', p: this.ajustar(this.cursor), ang: previo?.ang ?? 0, tam: previo?.tam ?? 1, punto: previo?.punto ?? 'N' });
       }
       if (this.herr === 'puerta' || this.herr === 'puerta2' || this.herr === 'ventana') extras.push(this.nuevaAbertura(this.herr, this.cursor));
     }

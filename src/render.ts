@@ -259,11 +259,13 @@ function dibujarAbertura(ctx: CanvasRenderingContext2D, el: Abertura, fondo: str
   ctx.restore();
 }
 
-/** N con una flecha roja que la atraviesa y apunta al norte. Medidas en metros. */
-export function dibujarNorte(ctx: CanvasRenderingContext2D, p: Pt, ang: number, tam: number) {
+/**
+ * Letra del punto cardinal (siempre derecha) con una flecha roja que la atraviesa
+ * y apunta hacia ese punto. Medidas en metros.
+ */
+export function dibujarNorte(ctx: CanvasRenderingContext2D, p: Pt, ang: number, tam: number, letra = 'N') {
   ctx.save();
   ctx.translate(p.x, p.y);
-  ctx.rotate(ang);
   const k = 100;
   ctx.save();
   ctx.scale(1 / k, 1 / k);
@@ -271,8 +273,9 @@ export function dibujarNorte(ctx: CanvasRenderingContext2D, p: Pt, ang: number, 
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillStyle = '#111827';
-  ctx.fillText('N', 0, tam * k * 0.06);
+  ctx.fillText(letra, 0, tam * k * 0.06);
   ctx.restore();
+  ctx.rotate(ang);
   const rojo = '#dc2626';
   ctx.strokeStyle = rojo;
   ctx.fillStyle = rojo;
@@ -344,7 +347,7 @@ export function dibujarElemento(ctx: CanvasRenderingContext2D, el: Elemento, d: 
       }
       break;
     case 'norte':
-      dibujarNorte(ctx, el.p, el.ang, el.tam);
+      dibujarNorte(ctx, el.p, el.ang, el.tam, el.punto ?? 'N');
       break;
     case 'texto':
       textoMundo(ctx, el.texto, el.p, el.tam, el.color, { ang: el.ang, negrita: el.negrita });

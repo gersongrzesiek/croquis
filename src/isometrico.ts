@@ -518,12 +518,17 @@ export interface OpcionesDibujoIso {
 }
 
 /**
- * Indicador del norte para la vista isométrica: pequeño y fijo en la esquina superior derecha,
- * con la flecha apuntando hacia donde queda el norte ya proyectado. Medidas en píxeles.
+ * Indicador de orientación para la vista isométrica: junto a la esquina superior derecha del dibujo
+ * (dentro del lienzo, para que siempre se vea), con la flecha apuntando al punto cardinal ya proyectado.
+ * `esquina` es la esquina superior derecha del dibujo en píxeles. Medidas en píxeles.
  */
-function rosaIso(ctx: CanvasRenderingContext2D, n: Norte, giro: number, ancho: number, alto: number) {
-  const r = Math.max(14, Math.min(ancho, alto) * 0.03);
-  const c = { x: ancho - r * 2.2, y: r * 2.2 };
+function rosaIso(ctx: CanvasRenderingContext2D, n: Norte, giro: number, ancho: number, alto: number, esquina: Pt) {
+  const r = Math.max(20, Math.min(ancho, alto) * 0.045);
+  const m = r * 1.9;
+  const c = {
+    x: Math.min(ancho - m, Math.max(m, esquina.x - r * 1.2)),
+    y: Math.min(alto - m, Math.max(m, esquina.y + r * 1.4)),
+  };
   // Dirección del norte en el plano, proyectada
   const o = aIso({ x: 0, y: 0 }, 0, giro);
   const q = aIso({ x: Math.sin(n.ang), y: -Math.cos(n.ang) }, 0, giro);
@@ -563,7 +568,7 @@ function rosaIso(ctx: CanvasRenderingContext2D, n: Norte, giro: number, ancho: n
   ctx.lineTo(punta.x - d.x * r * 0.32 + d.y * w, punta.y - d.y * r * 0.32 - d.x * w);
   ctx.closePath();
   ctx.fill();
-  // N junto a la punta, siempre derecha
+  // Letra junto a la punta, siempre derecha
   const f = Math.round(r * 0.62);
   ctx.font = `bold ${f}px Arial, sans-serif`;
   ctx.textAlign = 'center';
@@ -571,9 +576,10 @@ function rosaIso(ctx: CanvasRenderingContext2D, n: Norte, giro: number, ancho: n
   const pn = { x: c.x + d.x * (largo + f * 0.75), y: c.y + d.y * (largo + f * 0.75) };
   ctx.lineWidth = 3;
   ctx.strokeStyle = 'rgba(255,255,255,0.9)';
-  ctx.strokeText('N', pn.x, pn.y);
+  const letra = n.punto ?? 'N';
+  ctx.strokeText(letra, pn.x, pn.y);
   ctx.fillStyle = '#111827';
-  ctx.fillText('N', pn.x, pn.y);
+  ctx.fillText(letra, pn.x, pn.y);
   ctx.restore();
 }
 
@@ -692,5 +698,8 @@ export function dibujarIsometrico(ctx: CanvasRenderingContext2D, d: DatosCroquis
   }
   ctx.restore();
   const norte = d.elementos.find((e): e is Norte => e.tipo === 'norte');
-  if (norte) rosaIso(ctx, norte, g, o.ancho, o.alto);
+  if (norte) {
+    const c = cajaIso(d, iso) ?? { minx: 0, miny: 0, maxx: 0, maxy: 0 };
+    rosaIso(ctx, norte, g, o.ancho, o.alto, { x: c.maxx * v.escala + v.ox, y: c.miny * v.escala + v.oy });
+  }
 }

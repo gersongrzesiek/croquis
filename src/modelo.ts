@@ -100,12 +100,16 @@ export interface Trazo extends Base {
   grosor: number;
 }
 
-/** Indicador del norte: una N con una flecha roja que apunta al norte. */
+export type PuntoCardinal = 'N' | 'S' | 'E' | 'O';
+
+/** Indicador de orientación: una letra fija (N, S, E u O) con una flecha roja que apunta hacia ese punto cardinal. */
 export interface Norte extends Base {
   tipo: 'norte';
   p: Pt;
   /** Hacia dónde apunta la flecha, en radianes (0 = hacia arriba del plano, sentido horario). */
   ang: number;
+  /** Punto cardinal que indica la flecha (N por defecto). */
+  punto?: PuntoCardinal;
   /** Alto de la N, en metros. */
   tam: number;
 }
