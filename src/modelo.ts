@@ -139,6 +139,10 @@ export interface DatosCroquis {
     giroIso?: number;
     /** Transparencia de los muros frontales en la vista isométrica, en % (0 = opacos). */
     transparenciaFrontal?: number;
+    /** Transparencia de los muros intermedios en la vista isométrica, en % (0 por defecto). */
+    transparenciaIntermedia?: number;
+    /** Inclinación de la vista isométrica, en grados sobre el horizonte (35.26 por defecto). */
+    elevacionIso?: number;
   };
 }
 

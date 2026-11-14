@@ -307,6 +307,11 @@ export function modeloMueble(el: Mueble): Pieza[] {
       caja(0, 0, 1, 0.3, 0.6, 0.72, MAT.tapiz);
       caja(0, 0, 1, 0.16, 0.72, 0.9, MAT.tapiz);
       break;
+    case 'transfer-barrera':
+      // Solo la barrera fija de acero inoxidable, sin la persona
+      cajaM(-W / 2, -D / 2, W / 2, D / 2, 0, 0.47, MAT.metal);
+      cajaM(-W / 2 - 0.01, -D / 2 - 0.01, W / 2 + 0.01, D / 2 + 0.01, 0.47, 0.5, MAT.metal);
+      break;
     case 'transfer': {
       // Barrera fija de acero inoxidable (para sentarse) y un maniquí liso sentado a horcajadas
       // cambiándose las botas: un pie en el piso y el otro levantado del lado limpio, con las manos en la bota.
@@ -634,7 +639,28 @@ const unit = (a: V3): V3 => por(a, 1 / (Math.hypot(a[0], a[1], a[2]) || 1));
  * barrera, y a lo ancho (lado limpio en y positiva), z hacia arriba.
  */
 function mallaTransfer(W: number, D: number, mundo: (x: number, y: number) => Pt): CaraMalla[] {
+  // Armarla cuesta: se guarda por posición, giro, medidas y nivel de detalle
+  const o = mundo(0, 0);
+  const u = mundo(1, 0);
+  const llave = [o.x, o.y, u.x, u.y, W, D, detalleBajo].join('|');
+  const previa = cacheMallas.get(llave);
+  if (previa) return previa;
+  const res = armarMallaTransfer(W, D, mundo, detalleBajo ? 0.4 : 1);
+  if (cacheMallas.size > 40) cacheMallas.clear();
+  cacheMallas.set(llave, res);
+  return res;
+}
+
+const cacheMallas = new Map<string, CaraMalla[]>();
+let detalleBajo = false;
+/** Con detalle bajo, las superficies curvas llevan menos caras (para girar la vista con fluidez). */
+export function fijarDetalle(bajo: boolean) {
+  detalleBajo = bajo;
+}
+
+function armarMallaTransfer(W: number, D: number, mundo: (x: number, y: number) => Pt, f: number): CaraMalla[] {
   const caras: CaraMalla[] = [];
+  const q = (n: number, min: number) => Math.max(min, Math.round(n * f));
   const P = (v: V3) => ({ p: mundo(v[0], v[1]), z: v[2] });
   const N = (v: V3) => {
     const o = mundo(0, 0);
@@ -674,7 +700,7 @@ function mallaTransfer(W: number, D: number, mundo: (x: number, y: number) => Pt
 
   /** Tubo de sección elíptica entre dos puntos, con radios que cambian de un extremo al otro y tapas. */
   const tubo = (a: V3, b: V3, ra: [number, number], rb: [number, number], mat: Material, _lados = 0, ref: V3 = [0, 1, 0]) => {
-    const lados = 24;
+    const lados = q(40, 12);
     const d = unit(resta(b, a));
     let u = cruz(d, ref);
     if (Math.hypot(...u) < 1e-6) u = cruz(d, [1, 0, 0]);
@@ -686,7 +712,7 @@ function mallaTransfer(W: number, D: number, mundo: (x: number, y: number) => Pt
         return suma(c, suma(por(u, Math.cos(t) * r[0]), por(w, Math.sin(t) * r[1])));
       });
     // Tramos a lo largo del tubo, para que las caras se ordenen bien con las piezas vecinas
-    const tramos = Math.max(1, Math.ceil(Math.hypot(...resta(b, a)) / 0.08));
+    const tramos = Math.max(1, Math.ceil(Math.hypot(...resta(b, a)) / (f < 1 ? 0.1 : 0.05)));
     const anillos = Array.from({ length: tramos + 1 }, (_, k) => {
       const f = k / tramos;
       return anillo(suma(a, por(resta(b, a), f)), [ra[0] + (rb[0] - ra[0]) * f, ra[1] + (rb[1] - ra[1]) * f]);
@@ -708,7 +734,23 @@ function mallaTransfer(W: number, D: number, mundo: (x: number, y: number) => Pt
    * Superficie continua por anillos elípticos a lo largo de una línea (centro, ancho, fondo de cada
    * anillo). La normal de cada cara sale de su geometría, orientada hacia afuera del eje.
    */
-  const loft = (anillos: [V3, number, number][], mat: Material, lados = 28) => {
+  const loft = (control: [V3, number, number][], mat: Material, lados = q(48, 14), sub = f < 1 ? 2 : 4) => {
+    // Anillos intermedios por Catmull-Rom (centro y radios), para que el perfil sea curvo y no por tramos
+    const anillos: [V3, number, number][] = [];
+    const cr = (a: number, b: number, c: number, d: number, t: number) =>
+      0.5 * (2 * b + (c - a) * t + (2 * a - 5 * b + 4 * c - d) * t * t + (3 * b - a - 3 * c + d) * t * t * t);
+    for (let k = 0; k < control.length - 1; k++) {
+      const p0 = control[Math.max(0, k - 1)];
+      const p1 = control[k];
+      const p2 = control[k + 1];
+      const p3 = control[Math.min(control.length - 1, k + 2)];
+      for (let s = 0; s < sub; s++) {
+        const t = s / sub;
+        const c: V3 = [0, 1, 2].map((i) => cr(p0[0][i], p1[0][i], p2[0][i], p3[0][i], t)) as V3;
+        anillos.push([c, cr(p0[1], p1[1], p2[1], p3[1], t), cr(p0[2], p1[2], p2[2], p3[2], t)]);
+      }
+    }
+    anillos.push(control[control.length - 1]);
     const rings = anillos.map(([c, ra, rb], k) => {
       const prev = anillos[Math.max(0, k - 1)][0];
       const next = anillos[Math.min(anillos.length - 1, k + 1)][0];
@@ -738,7 +780,9 @@ function mallaTransfer(W: number, D: number, mundo: (x: number, y: number) => Pt
   };
 
   /** Elipsoide (radios en x, y, z locales). */
-  const elipsoide = (c: V3, r: V3, mat: Material, nu = 28, nv = 16) => {
+  const elipsoide = (c: V3, r: V3, mat: Material, nu0 = 44, nv0 = 26) => {
+    const nu = q(nu0, 10);
+    const nv = q(nv0, 6);
     const pt = (i: number, j: number): V3 => {
       const t = (i / nu) * Math.PI * 2;
       const f = -Math.PI / 2 + (j / nv) * Math.PI;
@@ -753,7 +797,7 @@ function mallaTransfer(W: number, D: number, mundo: (x: number, y: number) => Pt
         cara(j === 0 ? [q[0], q[2], q[3]] : j === nv - 1 ? [q[0], q[1], q[2]] : q, n, mat);
       }
   };
-  const bola = (c: V3, r: number, mat: Material) => elipsoide(c, [r, r, r], mat, 20, 12);
+  const bola = (c: V3, r: number, mat: Material) => elipsoide(c, [r, r, r], mat, 32, 18);
 
   // Barrera: cuerpo y cubierta de acero
   const zs = 0.5;
@@ -783,7 +827,7 @@ function mallaTransfer(W: number, D: number, mundo: (x: number, y: number) => Pt
   const cuello: V3 = [cx + 0.2, 0, zs + 0.55];
   tubo(pecho, cuello, [0.05, 0.05], [0.045, 0.045], piel, 8);
   elipsoide([cx + 0.26, 0.04, zs + 0.65], [0.1, 0.085, 0.115], piel);
-  elipsoide([cx + 0.32, 0.045, zs + 0.61], [0.045, 0.06, 0.05], piel, 16, 10);
+  elipsoide([cx + 0.32, 0.045, zs + 0.61], [0.045, 0.06, 0.05], piel, 28, 16);
   // Hombros y brazos: ambas manos sostienen la bota del pie levantado
   const pie: V3 = [cx + 0.44, 0.3, zs + 0.2];
   const hombroI: V3 = [cx + 0.16, -0.19, zs + 0.45];
@@ -800,7 +844,7 @@ function mallaTransfer(W: number, D: number, mundo: (x: number, y: number) => Pt
     tubo(h, c, [0.047, 0.047], [0.037, 0.037], piel);
     bola(c, 0.037, piel);
     tubo(c, m, [0.035, 0.035], [0.028, 0.028], piel);
-    elipsoide(m, [0.04, 0.03, 0.045], piel, 16, 10);
+    elipsoide(m, [0.04, 0.03, 0.045], piel, 28, 16);
   }
   // Pierna apoyada (lado y negativo): ya con la bota puesta
   const caderaI: V3 = [cx + 0.02, -0.1, zs + 0.09];

@@ -4,7 +4,7 @@ import { inyectarEstilos } from './estilos';
 import { exportarPNG, type ImagenCroquis } from './exportar';
 import { aMundo, areaPoligono, dist, distBorde, enPoligono, formatoM, insetPoligono, lado, proyectar, recortarPoligono } from './geometria';
 import { ICONOS } from './iconos';
-import { ALTURA_MUROS, aIso, dibujarIsometrico, encuadreIso, opcionesIso } from './isometrico';
+import { ALTURA_MUROS, aIso, dibujarIsometrico, encuadreIso, opcionesIso, usarElevacion } from './isometrico';
 import {
   datosVacios,
   normalizarDatos,
@@ -105,7 +105,7 @@ export interface ResultadoCroquis extends ImagenCroquis {
 
 type Accion =
   | { k: 'pan'; sx: number; sy: number; ox: number; oy: number }
-  | { k: 'girarIso'; sx: number; g0: number; pivote: Pt; pantalla: Pt; movido: boolean }
+  | { k: 'girarIso'; sx: number; sy: number; g0: number; e0: number; pivote: Pt; pantalla: Pt; movido: boolean }
   | { k: 'mover'; ultimo: Pt; previo: string; movido: boolean }
   | { k: 'manija'; id: string; cual: 'a' | 'b' | 'rot' | 'tam' | 'etq' | 'medio' | 'haz' | number; previo: string; vinculados: { el: Muro; extremo: 'a' | 'b' }[] }
   | { k: 'marco'; a: Pt; b: Pt; sumar: boolean }
@@ -157,6 +157,8 @@ export class Editor {
   private accion: Accion | null = null;
   /** Giro de la vista isométrica mientras se gira con el mouse (cuartos de vuelta, fraccionario). */
   private giroVivo: number | null = null;
+  /** Inclinación de la vista isométrica mientras se arrastra (grados). */
+  private elevVivo: number | null = null;
   private animGiro = 0;
   private poli: { tipo: 'muro' | 'area'; puntos: Pt[] } | null = null;
   private cursor: Pt | null = null;
@@ -380,7 +382,7 @@ export class Editor {
     this.btnDeshacer.disabled = !this.historial.length;
     this.btnRehacer.disabled = !this.rehechos.length;
     if (this.isometrico) {
-      this.estado.innerHTML = '<b>Vista isométrica</b><span>Arrastra para mover la vista; con el botón derecho (o Shift) la giras. Vuelve a Plano para editar.</span>';
+      this.estado.innerHTML = '<b>Vista isométrica</b><span>Arrastra para mover la vista; con el botón derecho (o Shift) la giras y la inclinas. Vuelve a Plano para editar.</span>';
       return;
     }
     const info = HERRAMIENTAS.find((x) => x.h === this.herr)!;
@@ -543,16 +545,21 @@ export class Editor {
     cancelAnimationFrame(this.animGiro);
     const c = cajaDeTodos(this.datos.elementos.filter((e) => e.tipo !== 'norte'));
     const pivote = c ? { x: (c.minx + c.maxx) / 2, y: (c.miny + c.maxy) / 2 } : { x: 0, y: 0 };
-    const g0 = this.giroVivo ?? opcionesIso(this.datos).giro;
+    const o = opcionesIso(this.datos);
+    const g0 = this.giroVivo ?? o.giro;
+    const e0 = this.elevVivo ?? o.elevacion;
+    usarElevacion(e0);
     const q = aIso(pivote, 0, g0);
     const pantalla = { x: this.vista.ox + q.x * this.vista.escala, y: this.vista.oy + q.y * this.vista.escala };
-    this.accion = { k: 'girarIso', sx: s.x, g0, pivote, pantalla, movido: false };
+    this.accion = { k: 'girarIso', sx: s.x, sy: s.y, g0, e0, pivote, pantalla, movido: false };
     this.canvas.style.cursor = 'grabbing';
   }
 
-  /** Gira la vista dejando el centro del croquis en el mismo lugar de la pantalla. */
-  private ponerGiroVivo(giro: number, a: { pivote: Pt; pantalla: Pt }) {
+  /** Gira e inclina la vista dejando el centro del croquis en el mismo lugar de la pantalla. */
+  private ponerGiroVivo(giro: number, a: { pivote: Pt; pantalla: Pt }, elev?: number) {
     this.giroVivo = giro;
+    if (elev !== undefined) this.elevVivo = elev;
+    usarElevacion(this.elevVivo ?? opcionesIso(this.datos).elevacion);
     const q = aIso(a.pivote, 0, giro);
     this.vista.ox = a.pantalla.x - q.x * this.vista.escala;
     this.vista.oy = a.pantalla.y - q.y * this.vista.escala;
@@ -575,7 +582,10 @@ export class Editor {
       }
       this.giroVivo = null;
       this.datos.opciones.giroIso = ((hasta % 4) + 4) % 4;
+      if (this.elevVivo !== null) this.datos.opciones.elevacionIso = Math.round(this.elevVivo * 10) / 10;
+      this.elevVivo = null;
       this.notificar();
+      this.actualizarPanel();
     };
     this.animGiro = requestAnimationFrame(paso);
   }
@@ -587,7 +597,7 @@ export class Editor {
       h('h3', { textContent: 'Vista isométrica' }),
       h('p', {
         textContent:
-          'El plano en 3D, con los muros levantados y los muebles como volúmenes. Arrastra para mover la vista, arrastra con el botón derecho (o Shift + arrastrar) para girarla y usa la rueda para acercar. Para editar, vuelve a Plano.',
+          'El plano en 3D, con los muros levantados y los muebles como volúmenes. Arrastra para mover la vista; arrastra con el botón derecho (o Shift + arrastrar) para girarla a los lados y para inclinarla hacia arriba o hacia abajo; usa la rueda para acercar. Para editar, vuelve a Plano.',
       }),
     );
     const altura = h('input', { type: 'number', value: String(o.altura), min: '0.2', max: '6', step: '0.1' });
@@ -624,6 +634,49 @@ export class Editor {
       h('label', { className: 'crq-campo' }, [
         h('span', { className: 'crq-fila-etq' }, ['Transparencia de muros frontales', valorTr]),
         tr,
+      ]),
+    );
+    // Transparencia de los muros intermedios (los que separan cuartos por dentro)
+    const valorTi = h('span', { className: 'crq-valor', textContent: `${Math.round(o.intermedios * 100)} %` });
+    const ti = h('input', { type: 'range', min: '0', max: '100', step: '5', value: String(Math.round(o.intermedios * 100)) });
+    ti.addEventListener('input', () => {
+      this.datos.opciones.transparenciaIntermedia = Number(ti.value);
+      valorTi.textContent = `${ti.value} %`;
+      this.notificar();
+    });
+    p.append(
+      h('label', { className: 'crq-campo' }, [
+        h('span', { className: 'crq-fila-etq' }, ['Transparencia de muros intermedios', valorTi]),
+        ti,
+      ]),
+    );
+    // Inclinación: de casi a ras del piso (5°) a vista desde arriba (90°)
+    const valorEl = h('span', { className: 'crq-valor', textContent: `${Math.round(o.elevacion)}°` });
+    const el = h('input', { type: 'range', min: '5', max: '90', step: '1', value: String(Math.round(o.elevacion)) });
+    el.addEventListener('input', () => {
+      this.datos.opciones.elevacionIso = Number(el.value);
+      valorEl.textContent = `${el.value}°`;
+      this.notificar();
+      this.encuadrar();
+    });
+    p.append(
+      h('label', { className: 'crq-campo' }, [
+        h('span', { className: 'crq-fila-etq' }, ['Inclinación de la vista', valorEl]),
+        el,
+      ]),
+      h('div', { className: 'crq-botones' }, [
+        this.boton('Isométrica', 'Volver a la inclinación isométrica (35°)', () => {
+          delete this.datos.opciones.elevacionIso;
+          this.notificar();
+          this.encuadrar();
+          this.actualizarPanel();
+        }),
+        this.boton('Desde arriba', 'Ver el croquis desde arriba (90°)', () => {
+          this.datos.opciones.elevacionIso = 90;
+          this.notificar();
+          this.encuadrar();
+          this.actualizarPanel();
+        }),
       ]),
     );
     const giro = h('div', { className: 'crq-botones' });
@@ -1802,10 +1855,12 @@ export class Editor {
     if (this.isometrico) {
       const a = this.accion;
       if (a?.k === 'girarIso') {
-        if (Math.abs(s.x - a.sx) > 2) a.movido = true;
-        // Media pantalla de arrastre (o 240 px) = un cuarto de vuelta
+        if (Math.abs(s.x - a.sx) > 2 || Math.abs(s.y - a.sy) > 2) a.movido = true;
+        // Horizontal: media pantalla de arrastre (o 240 px) = un cuarto de vuelta.
+        // Vertical: inclina la vista (hacia abajo se ve más desde arriba), de 5° a 90°.
         const paso = Math.max(240, this.canvas.getBoundingClientRect().width / 4);
-        this.ponerGiroVivo(a.g0 + (s.x - a.sx) / paso, a);
+        const elev = Math.min(90, Math.max(5, a.e0 + (s.y - a.sy) * 0.3));
+        this.ponerGiroVivo(a.g0 + (s.x - a.sx) / paso, a, elev);
         return;
       }
       if (a?.k === 'pan') {
@@ -1950,7 +2005,10 @@ export class Editor {
       case 'girarIso':
         this.canvas.style.cursor = 'grab';
         if (a.movido) this.asentarGiroIso(a);
-        else this.giroVivo = null;
+        else {
+          this.giroVivo = null;
+          this.elevVivo = null;
+        }
         break;
       case 'mover':
         if (a.movido) {
@@ -2175,7 +2233,7 @@ export class Editor {
     const ctx = this.ctx;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     if (this.isometrico) {
-      dibujarIsometrico(ctx, this.datos, this.vista, { ancho: r.width, alto: r.height, giro: this.giroVivo ?? undefined });
+      dibujarIsometrico(ctx, this.datos, this.vista, { ancho: r.width, alto: r.height, giro: this.giroVivo ?? undefined, elevacion: this.elevVivo ?? undefined });
       return;
     }
     dibujarEscena(ctx, this.datos, this.vista, {

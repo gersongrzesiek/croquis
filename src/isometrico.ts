@@ -4,7 +4,7 @@
  * Es solo una vista: se calcula a partir de los mismos datos del plano.
  */
 import { dibujarSimbolo } from './catalogo';
-import { alturaModelo, focoRayos, modeloMueble, type CaraMalla, type Material } from './muebles3d';
+import { alturaModelo, fijarDetalle, focoRayos, modeloMueble, type CaraMalla, type Material } from './muebles3d';
 import { cajaDeTodos, contorno, posEtiqueta, type Caja } from './elementos';
 import { aMundo, areaPoligono, dist, enPoligono } from './geometria';
 import type { Abertura, DatosCroquis, Elemento, Mueble, Muro, Norte, Pt } from './modelo';
@@ -19,7 +19,23 @@ const DINTEL_VENTANA = 2.1;
 const PIEZA = 0.4;
 
 const C = Math.cos(Math.PI / 6);
-const S = 0.5;
+/** Inclinación isométrica clásica (vista desde 35.26° sobre el horizonte). */
+export const ELEVACION_ISO = (Math.atan(Math.SQRT1_2) * 180) / Math.PI;
+// Coeficientes de la proyección según la inclinación: S para el fondo del piso, ZV para la altura,
+// y PX/PZ para la profundidad (qué tan cerca del observador queda un punto).
+let S = 0.5;
+let ZV = 1;
+let PX = 1;
+let PZ = 1;
+/** Fija la inclinación de la vista (grados sobre el horizonte, de 5 a 90). */
+export function usarElevacion(grados: number) {
+  const e = (Math.min(90, Math.max(5, grados)) * Math.PI) / 180;
+  const k = Math.SQRT2 * C;
+  S = (k * Math.sin(e)) / Math.SQRT2;
+  ZV = k * Math.cos(e);
+  PX = Math.cos(e) / Math.SQRT2;
+  PZ = Math.sin(e);
+}
 
 /** Altura del mueble en la vista isométrica (0 = va plano en el piso). */
 export function alturaMueble(el: Mueble): number {
@@ -33,12 +49,25 @@ export interface OpcionesIso {
   altura: number;
   /** Transparencia de los muros que dan al frente, de 0 (opacos) a 1 (solo el contorno). */
   transparencia: number;
+  /** Transparencia de los muros intermedios (los que no son exteriores), de 0 a 1. */
+  intermedios: number;
+  /** Inclinación de la vista en grados sobre el horizonte. */
+  elevacion: number;
 }
 
 export function opcionesIso(d: DatosCroquis): OpcionesIso {
   const giro = Math.round(d.opciones.giroIso ?? 0);
   const t = (d.opciones.transparenciaFrontal ?? 0) / 100;
-  return { giro: ((giro % 4) + 4) % 4, altura: d.opciones.alturaMuros ?? ALTURA_MUROS, transparencia: Math.min(1, Math.max(0, t)) };
+  const ti = (d.opciones.transparenciaIntermedia ?? 0) / 100;
+  const o = {
+    giro: ((giro % 4) + 4) % 4,
+    altura: d.opciones.alturaMuros ?? ALTURA_MUROS,
+    transparencia: Math.min(1, Math.max(0, t)),
+    intermedios: Math.min(1, Math.max(0, ti)),
+    elevacion: Math.min(90, Math.max(5, d.opciones.elevacionIso ?? ELEVACION_ISO)),
+  };
+  usarElevacion(o.elevacion);
+  return o;
 }
 
 /** Gira un punto del plano en cuartos de vuelta: exacto en los giros enteros, con trigonometría en los intermedios. */
@@ -65,7 +94,7 @@ function girar(p: Pt, giro: number): Pt {
 /** Punto del plano (con altura z) en coordenadas isométricas, en metros. */
 export function aIso(p: Pt, z: number, giro: number): Pt {
   const q = girar(p, giro);
-  return { x: (q.x - q.y) * C, y: (q.x + q.y) * S - z };
+  return { x: (q.x - q.y) * C, y: (q.x + q.y) * S - z * ZV };
 }
 
 /** Caja que ocupa el croquis ya proyectado, en metros isométricos. */
@@ -135,6 +164,7 @@ interface Prisma {
   /** Muro al que pertenece la pieza (para saber si da al frente). */
   muro?: Muro;
   frontal?: boolean;
+  intermedio?: boolean;
   /** Superficie curva: sin aristas verticales. */
   liso?: boolean;
   /** Dibujo propio en lugar de las caras del prisma (el haz de rayos X). */
@@ -374,12 +404,12 @@ function dibujarMalla(ctx: CanvasRenderingContext2D, caras: CaraMalla[], matPiez
   const orden = caras
     .map((c) => {
       const r = c.pts.map((q) => ({ ...girar(q.p, giro), z: q.z }));
-      const prof = r.reduce((s, q) => s + q.x + q.y + q.z, 0) / r.length;
+      const prof = r.reduce((s, q) => s + (q.x + q.y) * PX + q.z * PZ, 0) / r.length;
       if (c.n) {
         // Con normal hacia afuera: las caras que miran hacia atrás no se ven
         const g = girar({ x: c.n.x, y: c.n.y }, giro);
         const l = Math.hypot(g.x, g.y, c.n.z) || 1;
-        return { c, nx: g.x / l, ny: g.y / l, nz: c.n.z / l, prof, oculta: g.x + g.y + c.n.z <= 0 };
+        return { c, nx: g.x / l, ny: g.y / l, nz: c.n.z / l, prof, oculta: (g.x + g.y) * PX + c.n.z * PZ <= 0 };
       }
       // Normal (método de Newell), orientada hacia el observador
       let nx = 0;
@@ -490,7 +520,7 @@ function prismasMueble(el: Mueble, g: number): Prisma[] {
 
 /** Transformación del plano horizontal a altura z (sobre un contexto ya en metros isométricos). */
 function plano(ctx: CanvasRenderingContext2D, z: number, giro: number) {
-  ctx.translate(0, -z);
+  ctx.translate(0, -z * ZV);
   ctx.transform(C, S, -C, S, 0, 0);
   if (giro) ctx.rotate((giro * Math.PI) / 2);
 }
@@ -515,8 +545,8 @@ function ordenarPrismas(prismas: Prisma[], giro: number) {
       y1: Math.max(...ys),
       px0: Math.min(...sx),
       px1: Math.max(...sx),
-      py0: Math.min(...sy) - p.z1,
-      py1: Math.max(...sy) - p.z0,
+      py0: Math.min(...sy) - p.z1 * ZV,
+      py1: Math.max(...sy) - p.z0 * ZV,
     };
   });
   const e = 1e-6;
@@ -582,13 +612,14 @@ function ordenarPrismas(prismas: Prisma[], giro: number) {
  * ¿La pieza de muro da al frente? Lo es si, mirando desde ella hacia el observador, no hay ningún otro muro:
  * son los muros exteriores del lado de la vista, los que tapan el interior.
  */
-function esFrontal(p: Prisma, muros: Muro[], giro: number): boolean {
+function esFrontal(p: Prisma, muros: Muro[], giro: number, haciaAtras = false): boolean {
   const m = p.muro;
   if (!m) return false;
   const n = p.pts.length;
   const c = p.pts.reduce((s, q) => ({ x: s.x + q.x / n, y: s.y + q.y / n }), { x: 0, y: 0 });
   // Dirección hacia el observador, en coordenadas del plano
-  const d = girar({ x: Math.SQRT1_2, y: Math.SQRT1_2 }, -giro);
+  const k = haciaAtras ? -Math.SQRT1_2 : Math.SQRT1_2;
+  const d = girar({ x: k, y: k }, -giro);
   const o = { x: c.x + d.x * (m.grosor * 0.75 + 0.05), y: c.y + d.y * (m.grosor * 0.75 + 0.05) };
   for (const w of muros) {
     if (w === m) continue;
@@ -644,9 +675,12 @@ function dibujarPrisma(ctx: CanvasRenderingContext2D, p: Prisma, giro: number, p
       camino(cara);
       ctx.fillStyle = relleno;
       ctx.fill();
-      ctx.strokeStyle = relleno;
-      ctx.lineWidth = pelo;
-      ctx.stroke();
+      // El trazo del mismo color tapa las costuras; con transparencia se notaría doble, así que se omite
+      if (ctx.globalAlpha >= 0.999) {
+        ctx.strokeStyle = relleno;
+        ctx.lineWidth = pelo;
+        ctx.stroke();
+      }
     }
     if (bordes) {
       ctx.strokeStyle = p.borde;
@@ -694,9 +728,11 @@ function dibujarPrisma(ctx: CanvasRenderingContext2D, p: Prisma, giro: number, p
     camino(tapa);
     ctx.fillStyle = colorTapa;
     ctx.fill();
-    ctx.strokeStyle = colorTapa;
-    ctx.lineWidth = pelo;
-    ctx.stroke();
+    if (ctx.globalAlpha >= 0.999) {
+      ctx.strokeStyle = colorTapa;
+      ctx.lineWidth = pelo;
+      ctx.stroke();
+    }
   }
   if (p.tapa && rellenar) {
     ctx.save();
@@ -728,6 +764,8 @@ export interface OpcionesDibujoIso {
   fondo?: string;
   /** Giro en cuartos de vuelta, puede ser fraccionario (mientras se gira con el mouse). */
   giro?: number;
+  /** Inclinación en grados (mientras se inclina con el mouse). */
+  elevacion?: number;
 }
 
 /**
@@ -801,6 +839,9 @@ export function dibujarIsometrico(ctx: CanvasRenderingContext2D, d: DatosCroquis
   const fondo = o.fondo ?? '#ffffff';
   const iso = opcionesIso(d);
   if (o.giro !== undefined) iso.giro = o.giro;
+  if (o.elevacion !== undefined) usarElevacion((iso.elevacion = o.elevacion));
+  // Mientras se gira o inclina con el mouse, las figuras curvas van con menos caras
+  fijarDetalle(o.giro !== undefined || o.elevacion !== undefined);
   const g = iso.giro;
   const todos = ordenar(d.elementos);
   const muros = todos.filter((e): e is Muro => e.tipo === 'muro');
@@ -842,7 +883,37 @@ export function dibujarIsometrico(ctx: CanvasRenderingContext2D, d: DatosCroquis
   }
   ordenarPrismas(prismas, g);
   const frontales = iso.transparencia > 0 ? prismas.filter((p) => (p.frontal = esFrontal(p, muros, g))) : [];
-  for (const p of prismas) if (!p.frontal) (p.dibujo ? p.dibujo(ctx, pelo) : dibujarPrisma(ctx, p, g, pelo));
+  // Muros intermedios (ni del frente ni del fondo): se dibujan en su turno, con su transparencia
+  if (iso.intermedios > 0)
+    for (const p of prismas) if (p.muro && !p.frontal && !esFrontal(p, muros, g, true)) p.intermedio = true;
+  // Su planta queda pintada en el piso, como la franja del corte de un plano
+  for (const p of prismas) {
+    if (!p.intermedio || p.z0 > 1e-6 || p.color !== p.muro?.color) continue;
+    ctx.beginPath();
+    p.pts.forEach((q, i) => {
+      const s = aIso(q, 0, g);
+      if (i) ctx.lineTo(s.x, s.y);
+      else ctx.moveTo(s.x, s.y);
+    });
+    ctx.closePath();
+    ctx.fillStyle = p.color;
+    ctx.strokeStyle = p.color;
+    ctx.lineWidth = pelo;
+    ctx.fill();
+    ctx.stroke();
+  }
+  for (const p of prismas) {
+    if (p.frontal) continue;
+    if (p.dibujo) p.dibujo(ctx, pelo);
+    else if (p.intermedio) {
+      ctx.save();
+      ctx.globalAlpha = 1 - iso.intermedios;
+      dibujarPrisma(ctx, p, g, pelo, 'relleno');
+      ctx.globalAlpha = Math.max(0.45, 1 - iso.intermedios);
+      dibujarPrisma(ctx, p, g, pelo, 'bordes');
+      ctx.restore();
+    } else dibujarPrisma(ctx, p, g, pelo);
+  }
   if (frontales.length) {
     // Planta de los muros frontales en el piso: queda como la franja del corte, como en un plano
     ctx.save();

@@ -590,7 +590,7 @@ function dibujarCuadricula(ctx: CanvasRenderingContext2D, v: Vista, ancho: numbe
 }
 
 /** El transfer va en el vano de la puerta: se dibuja encima de ella para que no lo tape. */
-const rango = (el: Elemento) => (el.tipo === 'mueble' && el.clave === 'transfer' ? 4.5 : ORDEN[el.tipo]);
+const rango = (el: Elemento) => (el.tipo === 'mueble' && (el.clave === 'transfer' || el.clave === 'transfer-barrera') ? 4.5 : ORDEN[el.tipo]);
 
 export function ordenar(els: Elemento[]): Elemento[] {
   return els

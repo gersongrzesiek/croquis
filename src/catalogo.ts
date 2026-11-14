@@ -42,6 +42,7 @@ export const CATALOGO: ItemCatalogo[] = [
   it('mesa-exploracion', 'Mesa de exploración', 0.7, 1.8),
   it('mesa-quirurgica', 'Mesa quirúrgica', 0.6, 2.0),
   it('transfer', 'Transfer / cambio de botas', 0.9, 0.4),
+  it('transfer-barrera', 'Transfer (solo barrera)', 0.9, 0.4),
   it('lampara-quir', 'Lámpara quirúrgica', 0.9, 0.9),
   it('anestesia', 'Equipo de anestesia', 0.7, 0.6),
   it('mesa-mayo', 'Mesa Mayo', 0.6, 0.4),
@@ -109,7 +110,7 @@ export const CATEGORIAS: Categoria[] = [
     id: 'hospitalario',
     nombre: 'Hospitalario',
     norma: 'NOM-016-SSA3-2012',
-    claves: ['cama-hosp', 'camilla', 'mesa-exploracion', 'mesa-quirurgica', 'transfer', 'lampara-quir', 'anestesia', 'mesa-mayo', 'mesa-rinon', 'mesa-pasteur', 'carro-rojo', 'carro-curacion', 'portasueros', 'lavabo-cirujano', 'lavabo', 'asiento-giratorio', 'banqueta', 'negatoscopio', 'bote-rpbi', 'bote'],
+    claves: ['cama-hosp', 'camilla', 'mesa-exploracion', 'mesa-quirurgica', 'transfer', 'transfer-barrera', 'lampara-quir', 'anestesia', 'mesa-mayo', 'mesa-rinon', 'mesa-pasteur', 'carro-rojo', 'carro-curacion', 'portasueros', 'lavabo-cirujano', 'lavabo', 'asiento-giratorio', 'banqueta', 'negatoscopio', 'bote-rpbi', 'bote'],
   },
   {
     id: 'plagas',
@@ -342,7 +343,8 @@ export function dibujarSimbolo(ctx: CanvasRenderingContext2D, clave: string, w: 
       ctx.arc(X(0.75), Y(1), m * 0.12, 0, Math.PI);
       ctx.stroke();
       break;
-    case 'transfer': {
+    case 'transfer':
+    case 'transfer-barrera': {
       // Barrera de acero de lado a lado del acceso, con una persona sentada encima cambiándose las botas
       caja('#d1d5db');
       ctx.save();
@@ -353,6 +355,7 @@ export function dibujarSimbolo(ctx: CanvasRenderingContext2D, clave: string, w: 
       for (let t = -h; t < w; t += m * 0.35) linea(x0 + t, y0 + h, x0 + t + h, y0);
       ctx.restore();
       ctx.lineWidth = lw;
+      if (clave === 'transfer-barrera') break;
       // Botas (azules) a cada lado de la barrera: un pie en el piso y el otro pasando al lado limpio
       for (const [bx, by] of [[0.02, -h / 2 - m * 0.12], [m * 0.3, h / 2 - m * 0.08]]) {
         ctx.beginPath();
