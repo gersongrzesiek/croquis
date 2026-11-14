@@ -641,7 +641,7 @@ function mallaTransfer(W: number, D: number, mundo: (x: number, y: number) => Pt
     const q = mundo(v[0], v[1]);
     return { x: q.x - o.x, y: q.y - o.y, z: v[2] };
   };
-  const cara = (vs: V3[], n: V3, mat: Material, bordes?: boolean[], trama = true) =>
+  const cara = (vs: V3[], n: V3, mat: Material, bordes?: boolean[], trama = false) =>
     caras.push({ pts: vs.map(P), n: N(unit(n)), mat, bordes: bordes ?? vs.map(() => false), trama });
 
   /** Caja con sus caras partidas en cuadros pequeños (para que se ordenen bien con la figura). */
@@ -673,7 +673,8 @@ function mallaTransfer(W: number, D: number, mundo: (x: number, y: number) => Pt
   };
 
   /** Tubo de sección elíptica entre dos puntos, con radios que cambian de un extremo al otro y tapas. */
-  const tubo = (a: V3, b: V3, ra: [number, number], rb: [number, number], mat: Material, lados = 10, ref: V3 = [0, 1, 0]) => {
+  const tubo = (a: V3, b: V3, ra: [number, number], rb: [number, number], mat: Material, _lados = 0, ref: V3 = [0, 1, 0]) => {
+    const lados = 24;
     const d = unit(resta(b, a));
     let u = cruz(d, ref);
     if (Math.hypot(...u) < 1e-6) u = cruz(d, [1, 0, 0]);
@@ -684,20 +685,60 @@ function mallaTransfer(W: number, D: number, mundo: (x: number, y: number) => Pt
         const t = (i / lados) * Math.PI * 2;
         return suma(c, suma(por(u, Math.cos(t) * r[0]), por(w, Math.sin(t) * r[1])));
       });
-    const A = anillo(a, ra);
-    const B = anillo(b, rb);
-    for (let i = 0; i < lados; i++) {
-      const j = (i + 1) % lados;
-      const t = ((i + 0.5) / lados) * Math.PI * 2;
-      const n = suma(por(u, Math.cos(t) / ra[0]), por(w, Math.sin(t) / ra[1]));
-      cara([A[i], A[j], B[j], B[i]], n, mat);
-    }
+    // Tramos a lo largo del tubo, para que las caras se ordenen bien con las piezas vecinas
+    const tramos = Math.max(1, Math.ceil(Math.hypot(...resta(b, a)) / 0.08));
+    const anillos = Array.from({ length: tramos + 1 }, (_, k) => {
+      const f = k / tramos;
+      return anillo(suma(a, por(resta(b, a), f)), [ra[0] + (rb[0] - ra[0]) * f, ra[1] + (rb[1] - ra[1]) * f]);
+    });
+    for (let k = 0; k < tramos; k++)
+      for (let i = 0; i < lados; i++) {
+        const j = (i + 1) % lados;
+        const t = ((i + 0.5) / lados) * Math.PI * 2;
+        const n = suma(por(u, Math.cos(t) / ra[0]), por(w, Math.sin(t) / ra[1]));
+        cara([anillos[k][i], anillos[k][j], anillos[k + 1][j], anillos[k + 1][i]], n, mat);
+      }
+    const A = anillos[0];
+    const B = anillos[tramos];
     cara([...A].reverse(), por(d, -1), mat);
     cara(B, d, mat);
   };
 
+  /**
+   * Superficie continua por anillos elípticos a lo largo de una línea (centro, ancho, fondo de cada
+   * anillo). La normal de cada cara sale de su geometría, orientada hacia afuera del eje.
+   */
+  const loft = (anillos: [V3, number, number][], mat: Material, lados = 28) => {
+    const rings = anillos.map(([c, ra, rb], k) => {
+      const prev = anillos[Math.max(0, k - 1)][0];
+      const next = anillos[Math.min(anillos.length - 1, k + 1)][0];
+      const d = unit(resta(next, prev));
+      const u = unit(cruz(d, [1, 0, 0]));
+      const w = cruz(d, u);
+      return Array.from({ length: lados }, (_, i) => {
+        const t = (i / lados) * Math.PI * 2;
+        return suma(c, suma(por(u, Math.cos(t) * ra), por(w, Math.sin(t) * rb)));
+      });
+    });
+    for (let k = 0; k < rings.length - 1; k++)
+      for (let i = 0; i < lados; i++) {
+        const j = (i + 1) % lados;
+        const q = [rings[k][i], rings[k][j], rings[k + 1][j], rings[k + 1][i]];
+        let n = cruz(resta(q[2], q[0]), resta(q[3], q[1]));
+        const centro = por(suma(anillos[k][0], anillos[k + 1][0]), 0.5);
+        const medio = por(q.reduce((acc, v) => suma(acc, v), [0, 0, 0] as V3), 0.25);
+        const r = resta(medio, centro);
+        if (n[0] * r[0] + n[1] * r[1] + n[2] * r[2] < 0) n = por(n, -1);
+        cara(q, n, mat);
+      }
+    const fin = rings[rings.length - 1];
+    const ini = rings[0];
+    cara(fin, resta(anillos[anillos.length - 1][0], anillos[anillos.length - 2][0]), mat);
+    cara([...ini].reverse(), resta(anillos[0][0], anillos[1][0]), mat);
+  };
+
   /** Elipsoide (radios en x, y, z locales). */
-  const elipsoide = (c: V3, r: V3, mat: Material, nu = 12, nv = 8) => {
+  const elipsoide = (c: V3, r: V3, mat: Material, nu = 28, nv = 16) => {
     const pt = (i: number, j: number): V3 => {
       const t = (i / nu) * Math.PI * 2;
       const f = -Math.PI / 2 + (j / nv) * Math.PI;
@@ -712,7 +753,7 @@ function mallaTransfer(W: number, D: number, mundo: (x: number, y: number) => Pt
         cara(j === 0 ? [q[0], q[2], q[3]] : j === nv - 1 ? [q[0], q[1], q[2]] : q, n, mat);
       }
   };
-  const bola = (c: V3, r: number, mat: Material) => elipsoide(c, [r, r, r], mat, 10, 6);
+  const bola = (c: V3, r: number, mat: Material) => elipsoide(c, [r, r, r], mat, 20, 12);
 
   // Barrera: cuerpo y cubierta de acero
   const zs = 0.5;
@@ -722,18 +763,27 @@ function mallaTransfer(W: number, D: number, mundo: (x: number, y: number) => Pt
   const piel = MAT.maniqui;
   const bota = MAT.bota;
   const cx = -0.14;
-  // Pelvis sentada sobre la cubierta y torso inclinado hacia adelante (hacia la bota)
-  const pelvis: V3 = [cx, 0, zs + 0.1];
+  // Tronco de una sola pieza (cadera, cintura, pecho y hombros), inclinado hacia la bota.
+  // Al ser una superficie continua no se cruza consigo misma y se ve lisa.
   const pecho: V3 = [cx + 0.16, 0, zs + 0.46];
-  elipsoide([cx, 0, zs + 0.09], [0.13, 0.17, 0.1], piel);
-  tubo([cx, 0, zs + 0.06], [cx + 0.06, 0, zs + 0.3], [0.15, 0.11], [0.13, 0.1], piel, 12, [1, 0, 0]);
-  tubo([cx + 0.06, 0, zs + 0.3], pecho, [0.13, 0.1], [0.18, 0.11], piel, 12, [1, 0, 0]);
-  elipsoide(suma(pecho, [0, 0, 0.02]), [0.1, 0.18, 0.07], piel);
+  const tronco: [V3, number, number][] = [
+    [[cx - 0.01, 0, zs + 0.005], 0.07, 0.05],
+    [[cx - 0.01, 0, zs + 0.03], 0.14, 0.1],
+    [[cx, 0, zs + 0.09], 0.17, 0.12],
+    [[cx + 0.03, 0, zs + 0.17], 0.155, 0.105],
+    [[cx + 0.06, 0, zs + 0.26], 0.145, 0.1],
+    [[cx + 0.1, 0, zs + 0.35], 0.165, 0.105],
+    [[cx + 0.14, 0, zs + 0.42], 0.185, 0.105],
+    [[cx + 0.17, 0, zs + 0.48], 0.165, 0.09],
+    [[cx + 0.19, 0, zs + 0.52], 0.1, 0.07],
+    [[cx + 0.2, 0, zs + 0.535], 0.05, 0.045],
+  ];
+  loft(tronco, piel);
   // Cuello y cabeza mirando hacia la bota
   const cuello: V3 = [cx + 0.2, 0, zs + 0.55];
   tubo(pecho, cuello, [0.05, 0.05], [0.045, 0.045], piel, 8);
   elipsoide([cx + 0.26, 0.04, zs + 0.65], [0.1, 0.085, 0.115], piel);
-  elipsoide([cx + 0.32, 0.045, zs + 0.61], [0.045, 0.06, 0.05], piel, 8, 6);
+  elipsoide([cx + 0.32, 0.045, zs + 0.61], [0.045, 0.06, 0.05], piel, 16, 10);
   // Hombros y brazos: ambas manos sostienen la bota del pie levantado
   const pie: V3 = [cx + 0.44, 0.3, zs + 0.2];
   const hombroI: V3 = [cx + 0.16, -0.19, zs + 0.45];
@@ -750,7 +800,7 @@ function mallaTransfer(W: number, D: number, mundo: (x: number, y: number) => Pt
     tubo(h, c, [0.047, 0.047], [0.037, 0.037], piel);
     bola(c, 0.037, piel);
     tubo(c, m, [0.035, 0.035], [0.028, 0.028], piel);
-    elipsoide(m, [0.04, 0.03, 0.045], piel, 8, 6);
+    elipsoide(m, [0.04, 0.03, 0.045], piel, 16, 10);
   }
   // Pierna apoyada (lado y negativo): ya con la bota puesta
   const caderaI: V3 = [cx + 0.02, -0.1, zs + 0.09];
