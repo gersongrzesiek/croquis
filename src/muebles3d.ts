@@ -26,6 +26,8 @@ export const MAT = {
   amarillo: { color: '#eab308', luzLados: [0.1, 0.3], luzTapa: 0.4 },
   tapiz: { color: '#5b8fd6', luzLados: [0.3, 0.5], luzTapa: 0.6 },
   cristal: { color: '#7fb4e0', luzLados: [0.5, 0.65], luzTapa: 0.45 },
+  piel: { color: '#c99a74', luzLados: [0.1, 0.3], luzTapa: 0.4 },
+  bota: { color: '#60a5fa', luzLados: [0.15, 0.4], luzTapa: 0.5 },
 } satisfies Record<string, Material>;
 
 export interface Pieza {
@@ -298,6 +300,39 @@ export function modeloMueble(el: Mueble): Pieza[] {
       caja(0, 0, 1, 0.3, 0.6, 0.72, MAT.tapiz);
       caja(0, 0, 1, 0.16, 0.72, 0.9, MAT.tapiz);
       break;
+    case 'transfer': {
+      // Barrera fija de acero inoxidable (para sentarse) y una persona a horcajadas cambiándose las botas:
+      // un pie en el piso de un lado y el otro levantado del lado limpio, con las manos en la bota.
+      const zs = 0.5;
+      cajaM(-W / 2, -D / 2, W / 2, D / 2, 0, zs - 0.03, MAT.metal);
+      cajaM(-W / 2 - 0.01, -D / 2 - 0.01, W / 2 + 0.01, D / 2 + 0.01, zs - 0.03, zs, MAT.metal);
+      const cx = -0.12;
+      const ropa = MAT.negro;
+      // Pierna en el piso (lado y negativo)
+      cajaM(cx - 0.02, -0.26, cx + 0.16, -0.12, zs - 0.08, zs + 0.06, ropa);
+      cajaM(cx + 0.06, -0.27, cx + 0.17, -0.15, 0.08, zs - 0.08, ropa);
+      cajaM(cx + 0.04, -0.29, cx + 0.27, -0.14, 0, 0.09, MAT.bota);
+      // Pierna levantada (lado limpio): muslo hacia adelante, espinilla hacia abajo y la bota en el aire
+      cajaM(cx - 0.02, 0.12, cx + 0.36, 0.25, zs, zs + 0.13, ropa);
+      cajaM(cx + 0.28, 0.13, cx + 0.39, 0.25, zs - 0.26, zs, ropa);
+      cajaM(cx + 0.26, 0.12, cx + 0.5, 0.26, zs - 0.34, zs - 0.24, MAT.bota);
+      // Cadera y torso, un poco inclinado hacia la bota
+      cajaM(cx - 0.12, -0.15, cx + 0.06, 0.15, zs, zs + 0.14, ropa);
+      cajaM(cx - 0.1, -0.17, cx + 0.08, 0.17, zs + 0.14, zs + 0.34, ropa);
+      cajaM(cx - 0.04, -0.17, cx + 0.14, 0.17, zs + 0.34, zs + 0.52, ropa);
+      // Brazos: del hombro hacia la bota levantada
+      cajaM(cx + 0.06, -0.21, cx + 0.14, -0.13, zs + 0.3, zs + 0.5, ropa);
+      cajaM(cx + 0.12, -0.17, cx + 0.3, -0.09, zs + 0.18, zs + 0.3, MAT.piel);
+      cajaM(cx + 0.26, -0.11, cx + 0.34, 0.12, zs - 0.18, zs + 0.2, MAT.piel);
+      cajaM(cx + 0.06, 0.17, cx + 0.14, 0.24, zs + 0.3, zs + 0.5, ropa);
+      cajaM(cx + 0.12, 0.18, cx + 0.42, 0.26, zs - 0.18, zs + 0.3, MAT.piel);
+      // Cuello, cabeza (con cubrebocas) y gorro
+      cil(cx + 0.06, 0, 0.045, 0.045, zs + 0.52, zs + 0.58, MAT.piel, 10);
+      cil(cx + 0.08, 0, 0.1, 0.09, zs + 0.58, zs + 0.78, MAT.piel, 14);
+      cajaM(cx + 0.15, -0.06, cx + 0.19, 0.06, zs + 0.6, zs + 0.68, MAT.bota);
+      cil(cx + 0.07, 0, 0.105, 0.095, zs + 0.74, zs + 0.82, MAT.rojo, 14);
+      break;
+    }
     case 'mesa-quirurgica': {
       // Base rectangular, columna, chasis de acero y colchón en secciones (cabeza, espalda, asiento, piernas)
       caja(0.12, 0.38, 0.88, 0.78, 0, 0.12, MAT.metal);

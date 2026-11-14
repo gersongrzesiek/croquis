@@ -41,6 +41,7 @@ export const CATALOGO: ItemCatalogo[] = [
   it('camilla', 'Carro camilla', 0.7, 1.9),
   it('mesa-exploracion', 'Mesa de exploración', 0.7, 1.8),
   it('mesa-quirurgica', 'Mesa quirúrgica', 0.6, 2.0),
+  it('transfer', 'Transfer / cambio de botas', 0.9, 0.4),
   it('lampara-quir', 'Lámpara quirúrgica', 0.9, 0.9),
   it('anestesia', 'Equipo de anestesia', 0.7, 0.6),
   it('mesa-mayo', 'Mesa Mayo', 0.6, 0.4),
@@ -108,7 +109,7 @@ export const CATEGORIAS: Categoria[] = [
     id: 'hospitalario',
     nombre: 'Hospitalario',
     norma: 'NOM-016-SSA3-2012',
-    claves: ['cama-hosp', 'camilla', 'mesa-exploracion', 'mesa-quirurgica', 'lampara-quir', 'anestesia', 'mesa-mayo', 'mesa-rinon', 'mesa-pasteur', 'carro-rojo', 'carro-curacion', 'portasueros', 'lavabo-cirujano', 'lavabo', 'asiento-giratorio', 'banqueta', 'negatoscopio', 'bote-rpbi', 'bote'],
+    claves: ['cama-hosp', 'camilla', 'mesa-exploracion', 'mesa-quirurgica', 'transfer', 'lampara-quir', 'anestesia', 'mesa-mayo', 'mesa-rinon', 'mesa-pasteur', 'carro-rojo', 'carro-curacion', 'portasueros', 'lavabo-cirujano', 'lavabo', 'asiento-giratorio', 'banqueta', 'negatoscopio', 'bote-rpbi', 'bote'],
   },
   {
     id: 'plagas',
@@ -341,6 +342,33 @@ export function dibujarSimbolo(ctx: CanvasRenderingContext2D, clave: string, w: 
       ctx.arc(X(0.75), Y(1), m * 0.12, 0, Math.PI);
       ctx.stroke();
       break;
+    case 'transfer': {
+      // Barrera de acero de lado a lado del acceso, con una persona sentada encima cambiándose las botas
+      caja('#d1d5db');
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(x0, y0, w, h);
+      ctx.clip();
+      ctx.lineWidth = lw * 0.5;
+      for (let t = -h; t < w; t += m * 0.35) linea(x0 + t, y0 + h, x0 + t + h, y0);
+      ctx.restore();
+      ctx.lineWidth = lw;
+      // Botas (azules) a cada lado de la barrera: un pie en el piso y el otro pasando al lado limpio
+      for (const [bx, by] of [[0.02, -h / 2 - m * 0.12], [m * 0.3, h / 2 - m * 0.08]]) {
+        ctx.beginPath();
+        ctx.roundRect(bx, by, m * 0.45, m * 0.2, m * 0.08);
+        ctx.fillStyle = '#93c5fd';
+        ctx.fill();
+        ctx.stroke();
+      }
+      ctx.beginPath();
+      ctx.ellipse(0, 0, m * 0.2, m * 0.48, 0, 0, Math.PI * 2);
+      ctx.fillStyle = '#374151';
+      ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      circ(m * 0.05, 0, m * 0.16, '#ffffff');
+      break;
+    }
     case 'mesa-quirurgica':
       caja();
       lf(0, 0.18, 1, 0.18);
