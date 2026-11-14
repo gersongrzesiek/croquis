@@ -666,7 +666,33 @@ export function dibujarIsometrico(ctx: CanvasRenderingContext2D, d: DatosCroquis
     ctx.restore();
   }
 
-  // 3. Etiquetas, siempre de frente y encima de todo
+  // 3. Medidas de los muros: sobre cada muro, en su mismo plano vertical
+  if (d.opciones.medidasMuros) {
+    const tam = Math.max(0.2, 12 / v.escala);
+    for (const m of muros) {
+      const l = dist(m.a, m.b);
+      if (l <= 0.3) continue;
+      let u = { x: (m.b.x - m.a.x) / l, y: (m.b.y - m.a.y) / l };
+      const o0 = aIso({ x: 0, y: 0 }, 0, g);
+      let e = aIso(u, 0, g);
+      // Que el texto se lea de izquierda a derecha
+      if (e.x - o0.x < 0) {
+        u = { x: -u.x, y: -u.y };
+        e = aIso(u, 0, g);
+      }
+      const ex = { x: e.x - o0.x, y: e.y - o0.y };
+      // Casi de frente al observador el texto quedaría aplastado: se escribe derecho
+      const plano = Math.abs(ex.x) > 0.35;
+      const c = aIso({ x: (m.a.x + m.b.x) / 2, y: (m.a.y + m.b.y) / 2 }, iso.altura + 0.06, g);
+      ctx.save();
+      if (plano) ctx.transform(ex.x, ex.y, 0, 1, c.x, c.y);
+      else ctx.translate(c.x, c.y);
+      textoMundo(ctx, l.toFixed(2), { x: 0, y: 0 }, tam, "#374151", { alinear: 'center', base: 'bottom', halo: true });
+      ctx.restore();
+    }
+  }
+
+  // 4. Etiquetas, siempre de frente y encima de todo
   const tamMin = Math.max(0.16, 9 / v.escala);
   for (const el of todos) {
     if (el.tipo === 'area') {

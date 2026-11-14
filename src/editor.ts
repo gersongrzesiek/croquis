@@ -240,7 +240,7 @@ export class Editor {
       segmento.append(b);
     }
     barra.append(segmento, h('span', { className: 'crq-sep' }));
-    const alternar = (txt: string, titulo: string, get: () => boolean, set: (v: boolean) => void) => {
+    const alternar = (txt: string, titulo: string, get: () => boolean, set: (v: boolean) => void, enIso = false) => {
       const b = this.boton(txt, titulo, () => {
         set(!get());
         b.classList.toggle('crq-activo', get());
@@ -249,7 +249,7 @@ export class Editor {
       }, 'crq-alternar');
       b.classList.toggle('crq-activo', get());
       b.setAttribute('aria-pressed', String(get()));
-      this.soloPlano.push(b);
+      if (!enIso) this.soloPlano.push(b);
       return b;
     };
     barra.append(
@@ -258,7 +258,7 @@ export class Editor {
       alternar('Medidas', 'Mostrar la medida de cada muro', () => this.datos.opciones.medidasMuros, (v) => {
         this.datos.opciones.medidasMuros = v;
         this.notificar();
-      }),
+      }, true),
     );
     barra.append(h('span', { className: 'crq-esp' }));
     if (this.o.modo === 'modal') {
