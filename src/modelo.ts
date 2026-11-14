@@ -115,6 +115,8 @@ export interface DatosCroquis {
     alturaMuros?: number;
     /** Giro de la vista isométrica en cuartos de vuelta (0 a 3). */
     giroIso?: number;
+    /** Transparencia de los muros frontales en la vista isométrica, en % (0 = opacos). */
+    transparenciaFrontal?: number;
   };
 }
 

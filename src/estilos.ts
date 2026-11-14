@@ -83,6 +83,9 @@ export const CSS = `
 .crq-campo input[type=checkbox]{width:16px;height:16px;accent-color:var(--crq-acento-tinta)}
 .crq-campo input[type=color]{padding:2px;height:32px;width:48px;flex:none;cursor:pointer}
 .crq-campo textarea{height:auto;min-height:64px;padding:8px;resize:vertical}
+.crq-fila-etq{display:flex;justify-content:space-between;gap:8px}
+.crq-valor{white-space:nowrap;font-family:var(--crq-mono);font-variant-numeric:tabular-nums;color:var(--crq-texto)}
+.crq-campo input[type=range]{height:24px;padding:0;border:none;background:transparent;accent-color:var(--crq-acento-tinta);box-shadow:none}
 .crq-botones{display:flex;flex-wrap:wrap;gap:8px}
 .crq-raiz .crq-botones button{border-color:var(--crq-borde-fuerte)}
 

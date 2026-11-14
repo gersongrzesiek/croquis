@@ -72,11 +72,14 @@ export interface OpcionesIso {
   giro: number;
   /** Altura de los muros en metros. */
   altura: number;
+  /** Transparencia de los muros que dan al frente, de 0 (opacos) a 1 (solo el contorno). */
+  transparencia: number;
 }
 
 export function opcionesIso(d: DatosCroquis): OpcionesIso {
   const giro = Math.round(d.opciones.giroIso ?? 0);
-  return { giro: ((giro % 4) + 4) % 4, altura: d.opciones.alturaMuros ?? ALTURA_MUROS };
+  const t = (d.opciones.transparenciaFrontal ?? 0) / 100;
+  return { giro: ((giro % 4) + 4) % 4, altura: d.opciones.alturaMuros ?? ALTURA_MUROS, transparencia: Math.min(1, Math.max(0, t)) };
 }
 
 /** Gira un punto del plano en cuartos de vuelta (exacto, sin errores de redondeo). */
@@ -162,6 +165,9 @@ interface Prisma {
   /** Dibujo sobre la tapa (en coordenadas del plano), p. ej. el símbolo del mueble. */
   tapa?: (ctx: CanvasRenderingContext2D) => void;
   prof: number;
+  /** Muro al que pertenece la pieza (para saber si da al frente). */
+  muro?: Muro;
+  frontal?: boolean;
 }
 
 /** Recorta un polígono convexo con el semiplano dot(p, u) >= k. */
@@ -305,6 +311,7 @@ function prismasMuros(muros: Muro[], aberturas: Abertura[], o: OpcionesIso): Pri
               luzTapa: 0.4,
               borde: '#5b8fbf',
               prof: 0,
+              muro: m,
             });
             continue;
           }
@@ -320,6 +327,7 @@ function prismasMuros(muros: Muro[], aberturas: Abertura[], o: OpcionesIso): Pri
             luzTapa: 0,
             borde: aclarar(m.color, -0.25),
             prof: 0,
+            muro: m,
           });
         }
       }
@@ -377,7 +385,36 @@ function plano(ctx: CanvasRenderingContext2D, z: number, giro: number) {
   if (giro) ctx.rotate((giro * Math.PI) / 2);
 }
 
-function dibujarPrisma(ctx: CanvasRenderingContext2D, p: Prisma, giro: number, pelo: number) {
+/**
+ * ¿La pieza de muro da al frente? Lo es si, mirando desde ella hacia el observador, no hay ningún otro muro:
+ * son los muros exteriores del lado de la vista, los que tapan el interior.
+ */
+function esFrontal(p: Prisma, muros: Muro[], giro: number): boolean {
+  const m = p.muro;
+  if (!m) return false;
+  const n = p.pts.length;
+  const c = p.pts.reduce((s, q) => ({ x: s.x + q.x / n, y: s.y + q.y / n }), { x: 0, y: 0 });
+  // Dirección hacia el observador, en coordenadas del plano
+  const d = girar({ x: Math.SQRT1_2, y: Math.SQRT1_2 }, (4 - giro) % 4);
+  const o = { x: c.x + d.x * (m.grosor * 0.75 + 0.05), y: c.y + d.y * (m.grosor * 0.75 + 0.05) };
+  for (const w of muros) {
+    if (w === m) continue;
+    const ex = w.b.x - w.a.x;
+    const ey = w.b.y - w.a.y;
+    const den = d.x * ey - d.y * ex;
+    if (Math.abs(den) < 1e-12) continue;
+    const ax = w.a.x - o.x;
+    const ay = w.a.y - o.y;
+    const t = (ax * ey - ay * ex) / den;
+    const u = (ax * d.y - ay * d.x) / den;
+    if (t > 0 && u >= -1e-6 && u <= 1 + 1e-6) return false;
+  }
+  return true;
+}
+
+function dibujarPrisma(ctx: CanvasRenderingContext2D, p: Prisma, giro: number, pelo: number, modo: 'todo' | 'relleno' | 'bordes' = 'todo') {
+  const rellenar = modo !== 'bordes';
+  const bordes = modo !== 'relleno';
   const n = p.pts.length;
   const r = p.pts.map((q) => girar(q, giro));
   const cx = r.reduce((s, q) => s + q.x, 0) / n;
@@ -410,13 +447,15 @@ function dibujarPrisma(ctx: CanvasRenderingContext2D, p: Prisma, giro: number, p
     // La cara que mira a la derecha queda más clara que la que mira a la izquierda
     const luz = p.luzLados[0] + (p.luzLados[1] - p.luzLados[0]) * ((nx - ny + 1) / 2);
     const relleno = aclarar(p.color, luz);
-    camino(cara);
-    ctx.fillStyle = relleno;
-    ctx.fill();
-    ctx.strokeStyle = relleno;
-    ctx.lineWidth = pelo;
-    ctx.stroke();
-    {
+    if (rellenar) {
+      camino(cara);
+      ctx.fillStyle = relleno;
+      ctx.fill();
+      ctx.strokeStyle = relleno;
+      ctx.lineWidth = pelo;
+      ctx.stroke();
+    }
+    if (bordes) {
       ctx.strokeStyle = p.borde;
       ctx.lineWidth = pelo;
       ctx.beginPath();
@@ -438,20 +477,26 @@ function dibujarPrisma(ctx: CanvasRenderingContext2D, p: Prisma, giro: number, p
   }
   // Tapa
   const tapa = p.pts.map((_, i) => iso(i, p.z1));
-  camino(tapa);
   const colorTapa = aclarar(p.color, p.luzTapa);
-  ctx.fillStyle = colorTapa;
-  ctx.fill();
-  ctx.strokeStyle = colorTapa;
-  ctx.lineWidth = pelo;
-  ctx.stroke();
-  if (p.tapa) {
+  if (rellenar) {
+    camino(tapa);
+    ctx.fillStyle = colorTapa;
+    ctx.fill();
+    ctx.strokeStyle = colorTapa;
+    ctx.lineWidth = pelo;
+    ctx.stroke();
+  }
+  if (p.tapa && rellenar) {
     ctx.save();
     camino(tapa);
     ctx.clip();
     plano(ctx, p.z1, giro);
     p.tapa(ctx);
     ctx.restore();
+  }
+  if (!bordes) {
+    ctx.restore();
+    return;
   }
   ctx.strokeStyle = p.borde;
   ctx.lineWidth = pelo;
@@ -514,7 +559,45 @@ export function dibujarIsometrico(ctx: CanvasRenderingContext2D, d: DatosCroquis
     p.prof = r.x + r.y;
   }
   prismas.sort((a, b) => a.prof - b.prof || a.z0 - b.z0);
-  for (const p of prismas) dibujarPrisma(ctx, p, g, pelo);
+  const frontales = iso.transparencia > 0 ? prismas.filter((p) => (p.frontal = esFrontal(p, muros, g))) : [];
+  for (const p of prismas) if (!p.frontal) dibujarPrisma(ctx, p, g, pelo);
+  if (frontales.length) {
+    // Planta de los muros frontales en el piso: queda como la franja del corte, como en un plano
+    ctx.save();
+    for (const p of frontales) {
+      if (p.z0 > 1e-6 || p.color !== p.muro?.color) continue;
+      ctx.beginPath();
+      p.pts.forEach((q, i) => {
+        const s = aIso(q, 0, g);
+        if (i) ctx.lineTo(s.x, s.y);
+        else ctx.moveTo(s.x, s.y);
+      });
+      ctx.closePath();
+      ctx.fillStyle = p.color;
+      ctx.strokeStyle = p.color;
+      ctx.lineWidth = pelo;
+      ctx.fill();
+      ctx.stroke();
+    }
+    ctx.restore();
+    // Los muros frontales se pintan opacos en una capa aparte y se pegan con transparencia,
+    // para que las caras que se enciman no se vean más oscuras; luego van sus contornos completos.
+    const capa = document.createElement('canvas');
+    capa.width = ctx.canvas.width;
+    capa.height = ctx.canvas.height;
+    const cc = capa.getContext('2d')!;
+    cc.setTransform(ctx.getTransform());
+    for (const p of frontales) dibujarPrisma(cc, p, g, pelo, 'relleno');
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = 1 - iso.transparencia;
+    ctx.drawImage(capa, 0, 0);
+    ctx.restore();
+    ctx.save();
+    ctx.globalAlpha = Math.max(0.55, 1 - iso.transparencia);
+    for (const p of frontales) dibujarPrisma(ctx, p, g, pelo, 'bordes');
+    ctx.restore();
+  }
 
   // 3. Etiquetas, siempre de frente y encima de todo
   const tamMin = Math.max(0.16, 9 / v.escala);

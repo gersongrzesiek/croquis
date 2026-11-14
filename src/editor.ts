@@ -525,6 +525,20 @@ export class Editor {
       muros.append(b);
     }
     p.append(muros);
+    // Transparencia de los muros que dan al frente, para ver el interior
+    const valorTr = h('span', { className: 'crq-valor', textContent: `${Math.round(o.transparencia * 100)} %` });
+    const tr = h('input', { type: 'range', min: '0', max: '100', step: '5', value: String(Math.round(o.transparencia * 100)) });
+    tr.addEventListener('input', () => {
+      this.datos.opciones.transparenciaFrontal = Number(tr.value);
+      valorTr.textContent = `${tr.value} %`;
+      this.notificar();
+    });
+    p.append(
+      h('label', { className: 'crq-campo' }, [
+        h('span', { className: 'crq-fila-etq' }, ['Transparencia de muros frontales', valorTr]),
+        tr,
+      ]),
+    );
     const giro = h('div', { className: 'crq-botones' });
     const girar = (d: number) => {
       this.datos.opciones.giroIso = (opcionesIso(this.datos).giro + d + 4) % 4;

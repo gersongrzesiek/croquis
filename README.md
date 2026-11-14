@@ -27,9 +27,9 @@ Otros atajos: `Ctrl+Z` / `Ctrl+Y` deshacer y rehacer, `Supr` borrar, `Ctrl+D` du
 
 ## Vista isométrica
 
-El selector **Plano / Isométrico** de la barra superior muestra el croquis en 3D: los muros se levantan a una altura (2.5 m por defecto; en el panel hay atajos *Completa*, *Media* 1.2 m y *Baja* 0.4 m para ver el interior), las puertas y ventanas quedan como huecos en el muro y el mobiliario como volúmenes con su símbolo encima. Los botones **Girar** cambian el lado desde el que se ve. Es solo una vista: para editar se vuelve a **Plano** (o `Esc`).
+El selector **Plano / Isométrico** de la barra superior muestra el croquis en 3D: los muros se levantan a una altura (2.5 m por defecto; en el panel hay atajos *Completa*, *Media* 1.2 m y *Baja* 0.4 m para ver el interior), las puertas y ventanas quedan como huecos en el muro y el mobiliario como volúmenes con su símbolo encima. La **transparencia de muros frontales** (0 a 100 %) aclara los muros exteriores del lado de la vista, dejando su contorno y su franja en el piso, para ver el interior sin bajar la altura. Los botones **Girar** cambian el lado desde el que se ve. Es solo una vista: para editar se vuelve a **Plano** (o `Esc`).
 
-La vista elegida se guarda con el croquis (`datos.opciones.vista`, `alturaMuros`, `giroIso`), así que *Descargar PNG*, *Guardar croquis* y `Croquis.imagen()` entregan la imagen en esa vista. Para forzar una: `Croquis.imagen(datos, { vista: 'plano' })` o `{ vista: 'isometrico' }`. La imagen isométrica no lleva barra de escala.
+La vista elegida se guarda con el croquis (`datos.opciones.vista`, `alturaMuros`, `giroIso`, `transparenciaFrontal`), así que *Descargar PNG*, *Guardar croquis* y `Croquis.imagen()` entregan la imagen en esa vista. Para forzar una: `Croquis.imagen(datos, { vista: 'plano' })` o `{ vista: 'isometrico' }`. La imagen isométrica no lleva barra de escala.
 
 ## Integración en otra app (Actas Offline)
 
