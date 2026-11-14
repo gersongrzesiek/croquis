@@ -100,7 +100,17 @@ export interface Trazo extends Base {
   grosor: number;
 }
 
-export type Elemento = Muro | Abertura | Area | Mueble | Texto | Acceso | Cota | Linea | Trazo;
+/** Indicador del norte: una N con una flecha roja que apunta al norte. */
+export interface Norte extends Base {
+  tipo: 'norte';
+  p: Pt;
+  /** Hacia dónde apunta la flecha, en radianes (0 = hacia arriba del plano, sentido horario). */
+  ang: number;
+  /** Alto de la N, en metros. */
+  tam: number;
+}
+
+export type Elemento = Muro | Abertura | Area | Mueble | Texto | Acceso | Cota | Linea | Trazo | Norte;
 export type ConDosPuntos = Muro | Acceso | Cota | Linea;
 
 export interface DatosCroquis {

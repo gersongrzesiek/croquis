@@ -22,6 +22,7 @@ Todo se dibuja en **metros**: los muros, puertas y muebles tienen medidas reales
 | Acceso | `X` | Flecha con la leyenda "ACCESO" (editable). |
 | Cota | `K` | Línea de medida con la distancia en metros. |
 | Línea / Lápiz | `L` / `P` | Líneas (continuas o discontinuas) y trazo a mano alzada. |
+| Orientación | `O` | Coloca la N con la flecha roja que indica el norte (una por croquis). Se gira con su manija o con el ángulo en el panel. En la vista isométrica aparece pequeña y fija en la esquina superior derecha. |
 
 Otros atajos: `Ctrl+Z` / `Ctrl+Y` deshacer y rehacer, `Supr` borrar, `Ctrl+D` duplicar, flechas para mover 5 cm (`Shift` 50 cm), `Shift` al trazar fija ángulos de 45°. El **imán** ajusta a una rejilla de 5 cm y a las esquinas existentes; los muros se enderezan solos cerca de 0°/90°.
 

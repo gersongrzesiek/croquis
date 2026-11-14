@@ -31,6 +31,7 @@ const ORDEN: Record<Elemento['tipo'], number> = {
   cota: 5,
   acceso: 6,
   texto: 7,
+  norte: 8,
 };
 
 const cachePatrones = new Map<string, CanvasPattern | null>();
@@ -258,6 +259,42 @@ function dibujarAbertura(ctx: CanvasRenderingContext2D, el: Abertura, fondo: str
   ctx.restore();
 }
 
+/** N con una flecha roja que la atraviesa y apunta al norte. Medidas en metros. */
+export function dibujarNorte(ctx: CanvasRenderingContext2D, p: Pt, ang: number, tam: number) {
+  ctx.save();
+  ctx.translate(p.x, p.y);
+  ctx.rotate(ang);
+  const k = 100;
+  ctx.save();
+  ctx.scale(1 / k, 1 / k);
+  ctx.font = `bold ${tam * k * 1.15}px Arial, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#111827';
+  ctx.fillText('N', 0, tam * k * 0.06);
+  ctx.restore();
+  const rojo = '#dc2626';
+  ctx.strokeStyle = rojo;
+  ctx.fillStyle = rojo;
+  ctx.lineWidth = tam * 0.07;
+  ctx.lineCap = 'round';
+  const punta = -tam * 0.8;
+  ctx.beginPath();
+  ctx.moveTo(0, tam * 0.75);
+  ctx.lineTo(0, punta + tam * 0.2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(0, punta);
+  ctx.lineTo(tam * 0.13, punta + tam * 0.26);
+  ctx.lineTo(-tam * 0.13, punta + tam * 0.26);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(0, tam * 0.75, tam * 0.045, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
 function flecha(ctx: CanvasRenderingContext2D, a: Pt, b: Pt, tam: number) {
   const ang = Math.atan2(b.y - a.y, b.x - a.x);
   ctx.beginPath();
@@ -305,6 +342,9 @@ export function dibujarElemento(ctx: CanvasRenderingContext2D, el: Elemento, d: 
           halo: true,
         });
       }
+      break;
+    case 'norte':
+      dibujarNorte(ctx, el.p, el.ang, el.tam);
       break;
     case 'texto':
       textoMundo(ctx, el.texto, el.p, el.tam, el.color, { ang: el.ang, negrita: el.negrita });

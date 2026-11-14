@@ -17,6 +17,7 @@ import {
   type Elemento,
   type Mueble,
   type Muro,
+  type Norte,
   type Patron,
   type Pt,
   type Texto,
@@ -41,7 +42,8 @@ export type Herramienta =
   | 'acceso'
   | 'cota'
   | 'linea'
-  | 'lapiz';
+  | 'lapiz'
+  | 'norte';
 
 /** `sep` deja un espacio después del botón para agrupar la barra. */
 const HERRAMIENTAS: { h: Herramienta; nombre: string; tecla: string; ayuda: string; sep?: true }[] = [
@@ -60,7 +62,8 @@ const HERRAMIENTAS: { h: Herramienta; nombre: string; tecla: string; ayuda: stri
   { h: 'acceso', nombre: 'Acceso', tecla: 'X', ayuda: 'Arrastra desde afuera hacia la entrada para marcar un acceso.' },
   { h: 'cota', nombre: 'Cota', tecla: 'K', ayuda: 'Arrastra entre dos puntos para acotar la distancia.', sep: true },
   { h: 'linea', nombre: 'Línea', tecla: 'L', ayuda: 'Arrastra para trazar una línea. Shift fija ángulos de 45°.' },
-  { h: 'lapiz', nombre: 'Lápiz', tecla: 'P', ayuda: 'Dibujo a mano alzada.' },
+  { h: 'lapiz', nombre: 'Lápiz', tecla: 'P', ayuda: 'Dibujo a mano alzada.', sep: true },
+  { h: 'norte', nombre: 'Orientación', tecla: 'O', ayuda: 'Clic para colocar la N que indica el norte. Gira la flecha con su manija o escribe el ángulo en el panel. Solo hay una por croquis: un nuevo clic la mueve.' },
 ];
 
 /** Tinta azul de plano: selección, manijas y guías sobre el lienzo. */
@@ -482,7 +485,7 @@ export class Editor {
       p.append(this.campoSelect('Patrón', this.estilo.patron, PATRONES.map((x) => [x.v, x.n]), (v) => (this.estilo.patron = v as Patron)));
     } else if (this.herr === 'acceso') {
       p.append(this.campoColor('Color', this.estilo.acceso, (c) => (this.estilo.acceso = c)));
-    } else if (this.herr !== 'seleccionar' && this.herr !== 'mano' && this.herr !== 'puerta' && this.herr !== 'ventana' && this.herr !== 'dividir') {
+    } else if (this.herr !== 'seleccionar' && this.herr !== 'mano' && this.herr !== 'puerta' && this.herr !== 'ventana' && this.herr !== 'dividir' && this.herr !== 'norte') {
       p.append(this.campoColor('Color', this.estilo.color, (c) => (this.estilo.color = c)));
     }
     if (this.herr === 'seleccionar' || this.herr === 'mano') {
@@ -570,6 +573,7 @@ export class Editor {
       cota: 'Cota',
       linea: 'Línea',
       trazo: 'Trazo',
+      norte: 'Orientación',
     };
     p.append(h('h3', { textContent: nombres[el.tipo] }));
     switch (el.tipo) {
@@ -646,6 +650,11 @@ export class Editor {
         p.append(this.campoColor('Color', el.color, (c) => (el.color = c)));
         break;
       }
+      case 'norte':
+        p.append(h('p', { textContent: 'La flecha apunta al norte. Gírala con la manija redonda (Shift para giro libre) o escribe el ángulo: 0° es hacia arriba del plano y aumenta en el sentido del reloj.' }));
+        p.append(this.campoNum('Ángulo del norte (°)', Math.round((((el.ang * 180) / Math.PI) % 360 + 360) % 360), 0, 359, 1, (v) => (el.ang = normalizarAng((v * Math.PI) / 180))));
+        p.append(this.campoNum('Tamaño (m)', el.tam, 0.3, 5, 0.1, (v) => (el.tam = v)));
+        break;
       case 'acceso':
         p.append(this.campoTexto('Texto', el.texto, (v) => (el.texto = v)));
         p.append(this.campoColor('Color', el.color, (c) => (el.color = c)));
@@ -670,7 +679,7 @@ export class Editor {
   private accionesSeleccion() {
     const cont = h('div', { className: 'crq-botones' });
     const sel = this.seleccionados();
-    if (sel.some((e) => e.tipo === 'mueble' || e.tipo === 'puerta' || e.tipo === 'ventana' || e.tipo === 'texto')) {
+    if (sel.some((e) => e.tipo === 'mueble' || e.tipo === 'puerta' || e.tipo === 'ventana' || e.tipo === 'texto' || e.tipo === 'norte')) {
       cont.append(this.boton('Girar 90°', 'Girar (R)', () => this.girarSeleccion(Math.PI / 2)));
     }
     cont.append(
@@ -749,7 +758,7 @@ export class Editor {
 
   private aplicarColor(el: Elemento, c: string) {
     if (el.tipo === 'area') el.borde = c;
-    else el.color = c;
+    else if (el.tipo !== 'norte') el.color = c;
   }
 
   // ───────────────────────── Historial ─────────────────────────
@@ -856,7 +865,7 @@ export class Editor {
     if (!sel.length) return;
     this.registrar();
     for (const el of sel) {
-      if (el.tipo === 'mueble' || el.tipo === 'texto') el.ang = normalizarAng(el.ang + ang);
+      if (el.tipo === 'mueble' || el.tipo === 'texto' || el.tipo === 'norte') el.ang = normalizarAng(el.ang + ang);
       else if (el.tipo === 'puerta') {
         // Recorre las 4 orientaciones de la puerta sobre el mismo muro
         if (!el.invertir && !el.espejo) el.espejo = true;
@@ -1442,6 +1451,7 @@ export class Editor {
       const vertices = el.muros?.length ? this.esquinasCuarto(el) : el.puntos;
       return [...vertices.map((p, i) => ({ cual: i, p })), ...etq];
     }
+    if (el.tipo === 'norte') return [{ cual: 'rot', p: aMundo({ x: 0, y: -el.tam * 0.8 - this.tol(14) }, el.p, el.ang) }];
     if (el.tipo === 'mueble') {
       return [
         { cual: 'rot', p: aMundo({ x: 0, y: -el.alto / 2 - this.tol(22) }, el.p, el.ang) },
@@ -1594,6 +1604,25 @@ export class Editor {
       case 'mueble':
         this.agregar(this.nuevoMueble(p));
         return;
+      case 'norte': {
+        // Solo un norte por croquis: si ya existe, se mueve al nuevo punto
+        const previo = this.datos.elementos.find((e): e is Norte => e.tipo === 'norte');
+        let n: Norte;
+        if (previo) {
+          this.registrar();
+          previo.p = this.ajustar(p);
+          n = previo;
+          this.notificar();
+        } else {
+          n = { id: nuevoId(), tipo: 'norte', p: this.ajustar(p), ang: 0, tam: 1 };
+          this.agregar(n);
+        }
+        this.cambiarHerramienta('seleccionar');
+        this.seleccion = new Set([n.id]);
+        this.actualizarPanel();
+        this.dibujar();
+        return;
+      }
       case 'texto': {
         const t: Texto = { id: nuevoId(), tipo: 'texto', p: this.ajustar(p), texto: 'Etiqueta', tam: 0.3, color: this.estilo.color, negrita: false, ang: 0 };
         this.agregar(t);
@@ -1747,6 +1776,10 @@ export class Editor {
       for (const v of a.vinculados) v.el[v.extremo] = { ...q };
     } else if (el.tipo === 'area' && typeof a.cual === 'number') {
       el.puntos[a.cual] = this.ajustar(p, null, excluir);
+    } else if (el.tipo === 'norte' && a.cual === 'rot') {
+      let ang = Math.atan2(p.y - el.p.y, p.x - el.p.x) + Math.PI / 2;
+      if (!this.shift) ang = Math.round(ang / (Math.PI / 36)) * (Math.PI / 36);
+      el.ang = normalizarAng(ang);
     } else if (el.tipo === 'mueble') {
       if (a.cual === 'rot') {
         let ang = Math.atan2(p.y - el.p.y, p.x - el.p.x) + Math.PI / 2;
@@ -1982,6 +2015,10 @@ export class Editor {
     }
     if (!a && !this.poli && this.cursor) {
       if (this.herr === 'mueble') extras.push(this.nuevoMueble(this.cursor));
+      if (this.herr === 'norte') {
+        const previo = this.datos.elementos.find((e): e is Norte => e.tipo === 'norte');
+        extras.push({ id: '', tipo: 'norte', p: this.ajustar(this.cursor), ang: previo?.ang ?? 0, tam: previo?.tam ?? 1 });
+      }
       if (this.herr === 'puerta' || this.herr === 'puerta2' || this.herr === 'ventana') extras.push(this.nuevaAbertura(this.herr, this.cursor));
     }
     return extras;

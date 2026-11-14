@@ -6,7 +6,7 @@
 import { dibujarSimbolo } from './catalogo';
 import { cajaDeTodos, posEtiqueta, type Caja } from './elementos';
 import { aMundo, areaPoligono, dist } from './geometria';
-import type { Abertura, DatosCroquis, Elemento, Mueble, Muro, Pt } from './modelo';
+import type { Abertura, DatosCroquis, Elemento, Mueble, Muro, Norte, Pt } from './modelo';
 import { ajustarTexto, dibujarElemento, ordenar, poligonosMuros, textoMundo, type Vista } from './render';
 
 /** Altura de muros por defecto, en metros. */
@@ -104,7 +104,8 @@ export function aIso(p: Pt, z: number, giro: number): Pt {
 
 /** Caja que ocupa el croquis ya proyectado, en metros isométricos. */
 export function cajaIso(d: DatosCroquis, o: OpcionesIso): Caja | null {
-  const c = cajaDeTodos(d.elementos);
+  // El norte no ocupa lugar: en esta vista va fijo en una esquina
+  const c = cajaDeTodos(d.elementos.filter((e) => e.tipo !== 'norte'));
   if (!c) return null;
   const alto = Math.max(o.altura, ...d.elementos.map((e) => (e.tipo === 'mueble' ? alturaMueble(e.clave) : 0)));
   const r: Caja = { minx: Infinity, miny: Infinity, maxx: -Infinity, maxy: -Infinity };
@@ -516,6 +517,66 @@ export interface OpcionesDibujoIso {
   fondo?: string;
 }
 
+/**
+ * Indicador del norte para la vista isométrica: pequeño y fijo en la esquina superior derecha,
+ * con la flecha apuntando hacia donde queda el norte ya proyectado. Medidas en píxeles.
+ */
+function rosaIso(ctx: CanvasRenderingContext2D, n: Norte, giro: number, ancho: number, alto: number) {
+  const r = Math.max(14, Math.min(ancho, alto) * 0.03);
+  const c = { x: ancho - r * 2.2, y: r * 2.2 };
+  // Dirección del norte en el plano, proyectada
+  const o = aIso({ x: 0, y: 0 }, 0, giro);
+  const q = aIso({ x: Math.sin(n.ang), y: -Math.cos(n.ang) }, 0, giro);
+  const l = Math.hypot(q.x - o.x, q.y - o.y) || 1;
+  const d = { x: (q.x - o.x) / l, y: (q.y - o.y) / l };
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  // Elipse del piso, como un plato visto en isométrico
+  ctx.beginPath();
+  ctx.ellipse(c.x, c.y, r, r * S / C, 0, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(255,255,255,0.85)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(17,24,39,0.22)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  // Flecha: la mitad sur gris, la mitad norte roja
+  const largo = r * 0.85;
+  const punta = { x: c.x + d.x * largo, y: c.y + d.y * largo };
+  const cola = { x: c.x - d.x * largo * 0.7, y: c.y - d.y * largo * 0.7 };
+  ctx.strokeStyle = 'rgba(17,24,39,0.35)';
+  ctx.lineWidth = Math.max(1.5, r * 0.09);
+  ctx.beginPath();
+  ctx.moveTo(cola.x, cola.y);
+  ctx.lineTo(c.x, c.y);
+  ctx.stroke();
+  ctx.strokeStyle = '#dc2626';
+  ctx.fillStyle = '#dc2626';
+  ctx.beginPath();
+  ctx.moveTo(c.x, c.y);
+  ctx.lineTo(punta.x - d.x * r * 0.25, punta.y - d.y * r * 0.25);
+  ctx.stroke();
+  const w = r * 0.18;
+  ctx.beginPath();
+  ctx.moveTo(punta.x, punta.y);
+  ctx.lineTo(punta.x - d.x * r * 0.32 - d.y * w, punta.y - d.y * r * 0.32 + d.x * w);
+  ctx.lineTo(punta.x - d.x * r * 0.32 + d.y * w, punta.y - d.y * r * 0.32 - d.x * w);
+  ctx.closePath();
+  ctx.fill();
+  // N junto a la punta, siempre derecha
+  const f = Math.round(r * 0.62);
+  ctx.font = `bold ${f}px Arial, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const pn = { x: c.x + d.x * (largo + f * 0.75), y: c.y + d.y * (largo + f * 0.75) };
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+  ctx.strokeText('N', pn.x, pn.y);
+  ctx.fillStyle = '#111827';
+  ctx.fillText('N', pn.x, pn.y);
+  ctx.restore();
+}
+
 /** Dibuja el croquis en vista isométrica. El contexto debe venir en píxeles CSS (sin escala de mundo). */
 export function dibujarIsometrico(ctx: CanvasRenderingContext2D, d: DatosCroquis, v: Vista, o: OpcionesDibujoIso) {
   const fondo = o.fondo ?? '#ffffff';
@@ -630,4 +691,6 @@ export function dibujarIsometrico(ctx: CanvasRenderingContext2D, d: DatosCroquis
     }
   }
   ctx.restore();
+  const norte = d.elementos.find((e): e is Norte => e.tipo === 'norte');
+  if (norte) rosaIso(ctx, norte, g, o.ancho, o.alto);
 }
