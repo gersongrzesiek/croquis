@@ -113,6 +113,8 @@ export interface Trazo extends Base {
   /** Flechas en ambos sentidos (circulación de ida y vuelta). */
   dobleSentido?: boolean;
   discontinua?: boolean;
+  /** Camino de tramos rectos: se dibuja tal cual, sin suavizar las esquinas. */
+  recto?: boolean;
 }
 
 export type PuntoCardinal = 'N' | 'S' | 'E' | 'O';

@@ -12,7 +12,7 @@ export interface Caja {
 /** Ancho aproximado de un texto (en metros) sin necesidad de un contexto. */
 /** Puntos por donde pasa la línea de un trazo (los caminos se dibujan suavizados). */
 export function puntosTrazo(el: Trazo): Pt[] {
-  return el.camino ? suavizar(el.puntos) : el.puntos;
+  return el.camino && !el.recto ? suavizar(el.puntos) : el.puntos;
 }
 
 export function anchoTexto(texto: string, tam: number): number {
