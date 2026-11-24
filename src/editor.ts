@@ -2,7 +2,7 @@ import { CATALOGO, CATEGORIAS, DE_MURO, dibujarSimbolo, itemPorClave, itemsDeCat
 import { cajaDe, cajaDeTodos, mover, posEtiqueta, puntoLocal, puntosClave, toca } from './elementos';
 import { inyectarEstilos } from './estilos';
 import { exportarPNG, type ImagenCroquis } from './exportar';
-import { aMundo, areaPoligono, dist, distBorde, enPoligono, formatoM, insetPoligono, lado, proyectar, recortarPoligono } from './geometria';
+import { aMundo, areaPoligono, dist, distBorde, enPoligono, formatoM, insetPoligono, lado, proyectar, recortarPoligono, simplificar } from './geometria';
 import { ICONOS } from './iconos';
 import { ALTURA_MUROS, aIso, dibujarIsometrico, encuadreIso, opcionesIso, usarElevacion } from './isometrico';
 import {
@@ -44,6 +44,7 @@ export type Herramienta =
   | 'cota'
   | 'linea'
   | 'lapiz'
+  | 'camino'
   | 'norte';
 
 /** `sep` deja un espacio después del botón para agrupar la barra. */
@@ -63,7 +64,8 @@ const HERRAMIENTAS: { h: Herramienta; nombre: string; tecla: string; ayuda: stri
   { h: 'acceso', nombre: 'Acceso', tecla: 'X', ayuda: 'Arrastra desde afuera hacia la entrada para marcar un acceso.' },
   { h: 'cota', nombre: 'Cota', tecla: 'K', ayuda: 'Arrastra entre dos puntos para acotar la distancia.', sep: true },
   { h: 'linea', nombre: 'Línea', tecla: 'L', ayuda: 'Arrastra para trazar una línea. Shift fija ángulos de 45°.' },
-  { h: 'lapiz', nombre: 'Lápiz', tecla: 'P', ayuda: 'Dibujo a mano alzada.', sep: true },
+  { h: 'lapiz', nombre: 'Lápiz', tecla: 'P', ayuda: 'Dibujo a mano alzada.' },
+  { h: 'camino', nombre: 'Camino', tecla: 'G', ayuda: 'Dibuja a mano el recorrido de las personas, desde donde empiezan hasta donde llegan. Queda como una línea suave con flechas en el sentido en que lo trazaste.', sep: true },
   { h: 'norte', nombre: 'Orientación', tecla: 'O', ayuda: 'Clic para colocar la orientación (N, S, E u O) con su flecha. Gira la flecha con su manija o escribe el ángulo en el panel; la letra no gira. Solo hay una por croquis: un nuevo clic la mueve.' },
 ];
 
@@ -174,7 +176,7 @@ export class Editor {
   private busquedaMueble = '';
   private fantasmaAng = 0;
   private aberturaInvertir = false;
-  private estilo = { color: '#111827', muro: '#374151', grosorMuro: 0.15, relleno: '#bfdbfe', patron: 'ninguno' as Patron, acceso: '#16a34a', fondoCuarto: '#ffffff', dobleHoja: false, chaflan: 1 };
+  private estilo = { color: '#111827', muro: '#374151', grosorMuro: 0.15, relleno: '#bfdbfe', patron: 'ninguno' as Patron, acceso: '#16a34a', camino: '#dc2626', grosorCamino: 0.05, separacionCamino: 1, dobleSentido: false, caminoDiscontinuo: false, fondoCuarto: '#ffffff', dobleHoja: false, chaflan: 1 };
   private pendiente: string | null = null;
   private punteros = new Map<number, Pt>();
   private pellizco: { d: number; c: Pt; escala: number; ox: number; oy: number } | null = null;
@@ -528,6 +530,12 @@ export class Editor {
       p.append(this.campoSelect('Patrón', this.estilo.patron, PATRONES.map((x) => [x.v, x.n]), (v) => (this.estilo.patron = v as Patron)));
     } else if (this.herr === 'acceso') {
       p.append(this.campoColor('Color', this.estilo.acceso, (c) => (this.estilo.acceso = c)));
+    } else if (this.herr === 'camino') {
+      p.append(this.campoColor('Color', this.estilo.camino, (c) => (this.estilo.camino = c)));
+      p.append(this.campoNum('Grosor (cm)', Math.round(this.estilo.grosorCamino * 100), 1, 30, 1, (v) => (this.estilo.grosorCamino = v / 100)));
+      p.append(this.campoNum('Distancia entre flechas (m)', this.estilo.separacionCamino, 0.3, 10, 0.1, (v) => (this.estilo.separacionCamino = v)));
+      p.append(this.campoCheck('Doble sentido (ida y vuelta)', this.estilo.dobleSentido, (v) => (this.estilo.dobleSentido = v), false));
+      p.append(this.campoCheck('Línea discontinua', this.estilo.caminoDiscontinuo, (v) => (this.estilo.caminoDiscontinuo = v), false));
     } else if (this.herr !== 'seleccionar' && this.herr !== 'mano' && this.herr !== 'puerta' && this.herr !== 'ventana' && this.herr !== 'dividir' && this.herr !== 'norte') {
       p.append(this.campoColor('Color', this.estilo.color, (c) => (this.estilo.color = c)));
     }
@@ -709,7 +717,7 @@ export class Editor {
       acceso: 'Acceso',
       cota: 'Cota',
       linea: 'Línea',
-      trazo: 'Trazo',
+      trazo: (el as Trazo).camino ? 'Camino' : 'Trazo',
       norte: 'Orientación',
     };
     p.append(h('h3', { textContent: nombres[el.tipo] }));
@@ -843,6 +851,26 @@ export class Editor {
       case 'trazo':
         p.append(this.campoNum('Grosor (cm)', Math.round(el.grosor * 100), 1, 30, 1, (v) => (el.grosor = v / 100)));
         p.append(this.campoColor('Color', el.color, (c) => (el.color = c)));
+        p.append(
+          this.campoCheck('Con flechas de dirección (camino)', !!el.camino, (v) => {
+            el.camino = v;
+            this.actualizarPanel();
+          }),
+        );
+        if (el.camino) {
+          p.append(this.campoNum('Distancia entre flechas (m)', el.separacion ?? 1, 0.3, 10, 0.1, (v) => (el.separacion = v)));
+          p.append(this.campoCheck('Doble sentido (ida y vuelta)', !!el.dobleSentido, (v) => (el.dobleSentido = v)));
+          p.append(this.campoCheck('Línea discontinua', !!el.discontinua, (v) => (el.discontinua = v)));
+          p.append(
+            h('div', { className: 'crq-botones' }, [
+              this.boton('Invertir sentido', 'Las flechas apuntan al revés', () => {
+                this.registrar();
+                el.puntos.reverse();
+                this.dibujar();
+              }),
+            ]),
+          );
+        }
         break;
     }
     p.append(this.accionesSeleccion());
@@ -1859,6 +1887,14 @@ export class Editor {
       case 'lapiz':
         this.accion = { k: 'trazo', el: { id: nuevoId(), tipo: 'trazo', puntos: [p], color: this.estilo.color, grosor: 0.03 } };
         return;
+      case 'camino': {
+        const es = this.estilo;
+        const el: Trazo = { id: nuevoId(), tipo: 'trazo', camino: true, puntos: [p], color: es.camino, grosor: es.grosorCamino, separacion: es.separacionCamino };
+        if (es.dobleSentido) el.dobleSentido = true;
+        if (es.caminoDiscontinuo) el.discontinua = true;
+        this.accion = { k: 'trazo', el };
+        return;
+      }
     }
   }
 
@@ -2075,7 +2111,12 @@ export class Editor {
         if (dist(a.a, a.b) > this.tol(5) && Math.abs(a.a.x - a.b.x) > 0.01 && Math.abs(a.a.y - a.b.y) > 0.01) this.crearCuarto(rectangulo(a.a, a.b));
         break;
       case 'trazo':
-        this.agregar(a.el);
+        if (a.el.camino) {
+          // El pulso de la mano se alisa: quedan solo los puntos que dan forma al recorrido
+          a.el.puntos = simplificar(a.el.puntos, this.tol(3));
+          const largo = a.el.puntos.reduce((s, q, i, v) => (i ? s + dist(v[i - 1], q) : 0), 0);
+          if (largo > this.tol(10)) this.agregar(a.el);
+        } else this.agregar(a.el);
         break;
       case 'areaRect':
         if (dist(a.a, a.b) > this.tol(6) && Math.abs(a.a.x - a.b.x) > 0.01 && Math.abs(a.a.y - a.b.y) > 0.01) {
@@ -2352,7 +2393,7 @@ export class Editor {
         ctx.arc(s.x, s.y, 9, 0, Math.PI * 2);
         ctx.stroke();
       }
-    } else if (this.cursor && this.herr !== 'seleccionar' && this.herr !== 'mano' && this.herr !== 'lapiz' && this.herr !== 'mueble' && this.herr !== 'dividir') {
+    } else if (this.cursor && this.herr !== 'seleccionar' && this.herr !== 'mano' && this.herr !== 'lapiz' && this.herr !== 'camino' && this.herr !== 'mueble' && this.herr !== 'dividir') {
       const q = this.ajustar(this.cursor, this.poli?.puntos[this.poli.puntos.length - 1]);
       const s = aP(q);
       ctx.strokeStyle = ACENTO_LIENZO;

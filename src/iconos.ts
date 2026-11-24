@@ -18,6 +18,7 @@ export const ICONOS: Record<string, string> = {
   cota: svg('<path d="M3 12h14M3 9v6M17 9v6M4.5 13.5l-3-3M18.5 13.5l-3-3"/>'),
   linea: svg('<path d="M4 16L16 4"/>'),
   lapiz: svg('<path d="M4 16l1-4 8.5-8.5 3 3L8 15z"/>'),
+  camino: svg('<path d="M3 16c3 0 3-5 6.5-5S12 5 16.5 4"/><path d="M5.2 13.4l1.6.9-.2-1.8z" fill="currentColor"/><path d="M14 2.6l2.8 1.3-2.3 2" stroke-width="1.6"/>'),
   norte: svg('<path d="M6.5 15V6l7 8V5" stroke-width="1.6"/><path d="M10 18V3M7.8 5.4L10 2.5l2.2 2.9" stroke="#dc2626"/>'),
   plano: svg('<rect x="3" y="3" width="14" height="14"/><path d="M3 10h7v7M10 3v4"/>'),
   isometrico: svg('<path d="M10 2.5l6.5 3.75v7.5L10 17.5l-6.5-3.75v-7.5z"/><path d="M3.5 6.25L10 10l6.5-3.75M10 10v7.5"/>'),

@@ -139,3 +139,90 @@ export function distBorde(p: Pt, pts: Pt[]): number {
   for (let i = 0; i < pts.length; i++) m = Math.min(m, distSeg(p, pts[i], pts[(i + 1) % pts.length]));
   return m;
 }
+
+/** Simplifica una polilínea (Ramer–Douglas–Peucker): quita los puntos que se apartan menos de `tol`. */
+export function simplificar(pts: Pt[], tol: number): Pt[] {
+  if (pts.length < 3) return pts.map((p) => ({ ...p }));
+  const marca = new Array(pts.length).fill(false);
+  marca[0] = marca[pts.length - 1] = true;
+  const pila: [number, number][] = [[0, pts.length - 1]];
+  while (pila.length) {
+    const [i, j] = pila.pop()!;
+    let mejor = -1;
+    let dmax = tol;
+    for (let k = i + 1; k < j; k++) {
+      const d = distSeg(pts[k], pts[i], pts[j]);
+      if (d > dmax) {
+        dmax = d;
+        mejor = k;
+      }
+    }
+    if (mejor >= 0) {
+      marca[mejor] = true;
+      pila.push([i, mejor], [mejor, j]);
+    }
+  }
+  return pts.filter((_, i) => marca[i]).map((p) => ({ ...p }));
+}
+
+/** Curva suave (Catmull-Rom centrípeta) que pasa por todos los puntos, como polilínea densa. */
+export function suavizar(pts: Pt[], paso = 0.04): Pt[] {
+  if (pts.length < 3) return pts.map((p) => ({ ...p }));
+  const out: Pt[] = [{ ...pts[0] }];
+  const n = pts.length;
+  const P = (i: number) => pts[Math.max(0, Math.min(n - 1, i))];
+  for (let i = 0; i < n - 1; i++) {
+    const p0 = i === 0 ? { x: 2 * pts[0].x - pts[1].x, y: 2 * pts[0].y - pts[1].y } : P(i - 1);
+    const p1 = P(i);
+    const p2 = P(i + 1);
+    const p3 = i + 2 >= n ? { x: 2 * p2.x - p1.x, y: 2 * p2.y - p1.y } : P(i + 2);
+    const t01 = Math.sqrt(dist(p0, p1)) || 1e-4;
+    const t12 = Math.sqrt(dist(p1, p2)) || 1e-4;
+    const t23 = Math.sqrt(dist(p2, p3)) || 1e-4;
+    // Tangentes en p1 y p2 (forma de Hermite de la Catmull-Rom centrípeta)
+    const m1 = {
+      x: (p1.x - p0.x) / t01 - (p2.x - p0.x) / (t01 + t12) + (p2.x - p1.x) / t12,
+      y: (p1.y - p0.y) / t01 - (p2.y - p0.y) / (t01 + t12) + (p2.y - p1.y) / t12,
+    };
+    const m2 = {
+      x: (p2.x - p1.x) / t12 - (p3.x - p1.x) / (t12 + t23) + (p3.x - p2.x) / t23,
+      y: (p2.y - p1.y) / t12 - (p3.y - p1.y) / (t12 + t23) + (p3.y - p2.y) / t23,
+    };
+    m1.x *= t12;
+    m1.y *= t12;
+    m2.x *= t12;
+    m2.y *= t12;
+    const pasos = Math.max(2, Math.ceil(dist(p1, p2) / paso));
+    for (let s = 1; s <= pasos; s++) {
+      const t = s / pasos;
+      const t2 = t * t;
+      const t3 = t2 * t;
+      const h00 = 2 * t3 - 3 * t2 + 1;
+      const h10 = t3 - 2 * t2 + t;
+      const h01 = -2 * t3 + 3 * t2;
+      const h11 = t3 - t2;
+      out.push({
+        x: h00 * p1.x + h10 * m1.x + h01 * p2.x + h11 * m2.x,
+        y: h00 * p1.y + h10 * m1.y + h01 * p2.y + h11 * m2.y,
+      });
+    }
+  }
+  return out;
+}
+
+/** Punto y dirección a una distancia `s` a lo largo de la polilínea (con sus largos acumulados). */
+export function puntoEnRecorrido(pts: Pt[], acum: number[], s: number): { p: Pt; ang: number } {
+  let i = 1;
+  while (i < pts.length - 1 && acum[i] < s) i++;
+  const a = pts[i - 1];
+  const b = pts[i];
+  const largo = acum[i] - acum[i - 1] || 1e-9;
+  const t = Math.max(0, Math.min(1, (s - acum[i - 1]) / largo));
+  return { p: { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }, ang: Math.atan2(b.y - a.y, b.x - a.x) };
+}
+
+export function largosAcumulados(pts: Pt[]): number[] {
+  const acum = [0];
+  for (let i = 1; i < pts.length; i++) acum.push(acum[i - 1] + dist(pts[i - 1], pts[i]));
+  return acum;
+}

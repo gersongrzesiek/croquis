@@ -1,5 +1,6 @@
 import type { Area, Elemento, Pt } from './modelo';
-import { aLocal, aMundo, centroide, distSeg, enPoligono } from './geometria';
+import { aLocal, aMundo, centroide, distSeg, enPoligono, suavizar } from './geometria';
+import type { Trazo } from './modelo';
 
 export interface Caja {
   minx: number;
@@ -9,6 +10,11 @@ export interface Caja {
 }
 
 /** Ancho aproximado de un texto (en metros) sin necesidad de un contexto. */
+/** Puntos por donde pasa la línea de un trazo (los caminos se dibujan suavizados). */
+export function puntosTrazo(el: Trazo): Pt[] {
+  return el.camino ? suavizar(el.puntos) : el.puntos;
+}
+
 export function anchoTexto(texto: string, tam: number): number {
   const lineas = texto.split('\n');
   return Math.max(...lineas.map((l) => l.length)) * tam * 0.58;
@@ -32,8 +38,9 @@ export function contorno(el: Elemento): Pt[] {
     case 'acceso':
       return [el.a, el.b];
     case 'area':
-    case 'trazo':
       return el.puntos;
+    case 'trazo':
+      return puntosTrazo(el);
     case 'mueble':
       return esquinasCaja(el.p, el.ancho, el.alto, el.ang);
     case 'puerta':
@@ -102,9 +109,12 @@ export function toca(el: Elemento, p: Pt, tol: number): boolean {
     case 'cota':
     case 'acceso':
       return distSeg(p, el.a, el.b) <= tol;
-    case 'trazo':
-      for (let i = 1; i < el.puntos.length; i++) if (distSeg(p, el.puntos[i - 1], el.puntos[i]) <= tol + el.grosor) return true;
-      return false;
+    case 'trazo': {
+      const pts = puntosTrazo(el);
+      const extra = el.camino ? el.grosor * 2 : el.grosor;
+      for (let i = 1; i < pts.length; i++) if (distSeg(p, pts[i - 1], pts[i]) <= tol + extra) return true;
+      return pts.length === 1 && distSeg(p, pts[0], pts[0]) <= tol + extra;
+    }
     case 'area':
       if (enPoligono(p, el.puntos)) return true;
       for (let i = 0; i < el.puntos.length; i++) {
