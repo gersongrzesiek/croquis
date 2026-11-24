@@ -400,9 +400,24 @@ function dibujarCamino(ctx: CanvasRenderingContext2D, el: Trazo) {
   // Flechas intermedias, repartidas a lo largo del camino
   const sep = Math.max(tam * 1.5, el.separacion ?? 1);
   const a0 = el.dobleSentido ? tam * 1.2 : tam * 0.4;
-  const disponible = largo - tam * 1.6 - a0;
-  const n = Math.floor(disponible / sep);
-  for (let k = 0; k < n; k++) punta(a0 + (disponible * (k + 0.5)) / n, !!el.dobleSentido && k % 2 === 1);
+  const fin0 = largo - tam * 1.6;
+  if (el.recto) {
+    // En tramos rectos, cada tramo lleva sus flechas lejos de los quiebres para que no sobresalgan en las esquinas
+    const margen = tam * 0.8;
+    let k = 0;
+    for (let i = 1; i < pts.length; i++) {
+      const lo = Math.max(acum[i - 1] + (i > 1 ? margen : 0), a0);
+      const hi = Math.min(acum[i] - (i < pts.length - 1 ? margen : 0), fin0);
+      const disponible = hi - lo;
+      if (disponible < 0) continue;
+      const n = Math.max(1, Math.floor(disponible / sep));
+      for (let j = 0; j < n; j++, k++) punta(lo + (disponible * (j + 0.5)) / n, !!el.dobleSentido && k % 2 === 1);
+    }
+  } else {
+    const disponible = fin0 - a0;
+    const n = Math.floor(disponible / sep);
+    for (let k = 0; k < n; k++) punta(a0 + (disponible * (k + 0.5)) / n, !!el.dobleSentido && k % 2 === 1);
+  }
   // Punta final (y la inicial si es de doble sentido)
   punta(largo - tam / 2, false);
   if (el.dobleSentido) punta(tam / 2, true);
