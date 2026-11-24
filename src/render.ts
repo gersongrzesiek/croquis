@@ -1,8 +1,8 @@
 import { dibujarSimbolo } from './catalogo';
-import { contorno, posEtiqueta } from './elementos';
+import { contorno, posEtiqueta, puntosTrazo } from './elementos';
 import { alturaModelo, focoRayos } from './muebles3d';
-import { aMundo, areaPoligono, dist, enPoligono, formatoM } from './geometria';
-import type { Abertura, Area, DatosCroquis, Elemento, Mueble, Muro, Patron, Pt } from './modelo';
+import { aMundo, areaPoligono, dist, enPoligono, formatoM, largosAcumulados, puntoEnRecorrido } from './geometria';
+import type { Abertura, Area, DatosCroquis, Elemento, Mueble, Muro, Patron, Pt, Trazo } from './modelo';
 
 /** pantalla = mundo * escala + o */
 export interface Vista {
@@ -339,6 +339,90 @@ function flecha(ctx: CanvasRenderingContext2D, a: Pt, b: Pt, tam: number) {
   ctx.fill();
 }
 
+/** Tamaño de las flechas de un camino, según su grosor. */
+export function tamFlechaCamino(el: Trazo): number {
+  return Math.max(0.24, el.grosor * 5);
+}
+
+/** Camino de circulación: línea suave con flechas que indican el sentido del recorrido. */
+function dibujarCamino(ctx: CanvasRenderingContext2D, el: Trazo) {
+  const pts = puntosTrazo(el);
+  const acum = largosAcumulados(pts);
+  const largo = acum[acum.length - 1];
+  const tam = tamFlechaCamino(el);
+  ctx.strokeStyle = el.color;
+  ctx.fillStyle = el.color;
+  ctx.lineWidth = el.grosor;
+  if (largo < 1e-6) {
+    ctx.beginPath();
+    ctx.arc(pts[0].x, pts[0].y, el.grosor, 0, Math.PI * 2);
+    ctx.fill();
+    return;
+  }
+  // La línea se detiene antes de la punta final para que la flecha quede limpia
+  const ini = el.dobleSentido ? Math.min(tam * 0.6, largo / 3) : 0;
+  const fin = largo - Math.min(tam * 0.6, largo / 3);
+  ctx.save();
+  if (el.discontinua) ctx.setLineDash([el.grosor * 4, el.grosor * 3]);
+  ctx.beginPath();
+  let empezado = false;
+  const linea = (p: Pt) => {
+    if (empezado) ctx.lineTo(p.x, p.y);
+    else ctx.moveTo(p.x, p.y);
+    empezado = true;
+  };
+  linea(puntoEnRecorrido(pts, acum, ini).p);
+  for (let i = 1; i < pts.length - 1; i++) if (acum[i] > ini && acum[i] < fin) linea(pts[i]);
+  linea(puntoEnRecorrido(pts, acum, fin).p);
+  ctx.stroke();
+  ctx.restore();
+
+  const punta = (s: number, atras: boolean) => {
+    const { p, ang: a0 } = puntoEnRecorrido(pts, acum, s);
+    const ang = atras ? a0 + Math.PI : a0;
+    const c = Math.cos(ang);
+    const sn = Math.sin(ang);
+    // Punta adelante y base atrás, centrada en el punto
+    const largoF = tam;
+    const ancho = tam * 0.42;
+    const px = p.x + (c * largoF) / 2;
+    const py = p.y + (sn * largoF) / 2;
+    const bx = p.x - (c * largoF) / 2;
+    const by = p.y - (sn * largoF) / 2;
+    ctx.beginPath();
+    ctx.moveTo(px, py);
+    ctx.lineTo(bx - sn * ancho, by + c * ancho);
+    ctx.lineTo(bx + c * largoF * 0.18, by + sn * largoF * 0.18);
+    ctx.lineTo(bx + sn * ancho, by - c * ancho);
+    ctx.closePath();
+    ctx.fill();
+  };
+  // Flechas intermedias, repartidas a lo largo del camino
+  const sep = Math.max(tam * 1.5, el.separacion ?? 1);
+  const a0 = el.dobleSentido ? tam * 1.2 : tam * 0.4;
+  const fin0 = largo - tam * 1.6;
+  if (el.recto) {
+    // En tramos rectos, cada tramo lleva sus flechas lejos de los quiebres para que no sobresalgan en las esquinas
+    const margen = tam * 0.8;
+    let k = 0;
+    for (let i = 1; i < pts.length; i++) {
+      const lo = Math.max(acum[i - 1] + (i > 1 ? margen : 0), a0);
+      const hi = Math.min(acum[i] - (i < pts.length - 1 ? margen : 0), fin0);
+      const disponible = hi - lo;
+      if (disponible < 0) continue;
+      const n = Math.max(1, Math.floor(disponible / sep));
+      for (let j = 0; j < n; j++, k++) punta(lo + (disponible * (j + 0.5)) / n, !!el.dobleSentido && k % 2 === 1);
+    }
+  } else {
+    const disponible = fin0 - a0;
+    const n = Math.floor(disponible / sep);
+    for (let k = 0; k < n; k++) punta(a0 + (disponible * (k + 0.5)) / n, !!el.dobleSentido && k % 2 === 1);
+  }
+  // Punta final (y la inicial si es de doble sentido)
+  punta(largo - tam / 2, false);
+  if (el.dobleSentido) punta(tam / 2, true);
+}
+
 export function dibujarElemento(ctx: CanvasRenderingContext2D, el: Elemento, d: DatosCroquis, escala: number, fondo: string) {
   ctx.save();
   ctx.lineCap = 'round';
@@ -414,6 +498,10 @@ export function dibujarElemento(ctx: CanvasRenderingContext2D, el: Elemento, d: 
       ctx.stroke();
       break;
     case 'trazo':
+      if (el.camino) {
+        dibujarCamino(ctx, el);
+        break;
+      }
       ctx.strokeStyle = el.color;
       ctx.lineWidth = el.grosor;
       ctx.beginPath();

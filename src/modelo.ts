@@ -106,6 +106,15 @@ export interface Trazo extends Base {
   puntos: Pt[];
   color: string;
   grosor: number;
+  /** Camino de circulación: el trazo se suaviza y lleva flechas en el sentido en que se dibujó. */
+  camino?: boolean;
+  /** Distancia entre flechas a lo largo del camino, en metros (1 por defecto). */
+  separacion?: number;
+  /** Flechas en ambos sentidos (circulación de ida y vuelta). */
+  dobleSentido?: boolean;
+  discontinua?: boolean;
+  /** Camino de tramos rectos: se dibuja tal cual, sin suavizar las esquinas. */
+  recto?: boolean;
 }
 
 export type PuntoCardinal = 'N' | 'S' | 'E' | 'O';
