@@ -23,7 +23,10 @@ import {
   type Pt,
   type Texto,
   type Trazo,
+  type Imagen,
+  datosLimpios,
 } from './modelo';
+import { alCargarImagen, prepararImagen } from './imagenes';
 import { alcanceHaz, dibujarEscena, tieneHaz, type Vista } from './render';
 
 
@@ -45,7 +48,8 @@ export type Herramienta =
   | 'linea'
   | 'lapiz'
   | 'camino'
-  | 'norte';
+  | 'norte'
+  | 'imagen';
 
 /** `sep` deja un espacio después del botón para agrupar la barra. */
 const HERRAMIENTAS: { h: Herramienta; nombre: string; tecla: string; ayuda: string; sep?: true }[] = [
@@ -67,6 +71,7 @@ const HERRAMIENTAS: { h: Herramienta; nombre: string; tecla: string; ayuda: stri
   { h: 'lapiz', nombre: 'Lápiz', tecla: 'P', ayuda: 'Dibujo a mano alzada.' },
   { h: 'camino', nombre: 'Camino', tecla: 'G', ayuda: 'Marca el recorrido de las personas, desde donde empiezan hasta donde llegan: a mano alzada (queda como una línea suave) o recto por tramos. Las flechas siguen el sentido en que lo trazaste.', sep: true },
   { h: 'norte', nombre: 'Orientación', tecla: 'O', ayuda: 'Clic para colocar la orientación (N, S, E u O) con su flecha. Gira la flecha con su manija o escribe el ángulo en el panel; la letra no gira. Solo hay una por croquis: un nuevo clic la mueve.' },
+  { h: 'imagen', nombre: 'Imagen', tecla: 'I', ayuda: 'Pega una imagen con Ctrl+V (en cualquier herramienta), arrástrala desde una carpeta al lienzo o elígela de un archivo. Sirve, por ejemplo, para calcar encima la foto de un plano.' },
 ];
 
 /** Tinta azul de plano: selección, manijas y guías sobre el lienzo. */
@@ -185,6 +190,9 @@ export class Editor {
   private dibujoPedido = false;
   private observador: ResizeObserver;
   private quitarTeclas: () => void;
+  private quitarImagenes: () => void;
+  /** Proporción ancho/alto de la imagen cuya esquina se arrastra. */
+  private proporcion = 1;
 
   constructor(
     contenedor: HTMLElement,
@@ -204,6 +212,7 @@ export class Editor {
     this.observador = new ResizeObserver(() => this.ajustarTamano());
     this.observador.observe(this.canvas.parentElement!);
     this.quitarTeclas = this.escucharTeclas();
+    this.quitarImagenes = this.escucharImagenes();
     this.escucharPunteros();
     this.ajustarTamano();
     if (this.datos.elementos.length) {
@@ -222,6 +231,7 @@ export class Editor {
   destruir() {
     this.observador.disconnect();
     this.quitarTeclas();
+    this.quitarImagenes();
     this.raiz.remove();
   }
 
@@ -522,6 +532,9 @@ export class Editor {
       p.append(this.campoNum('Grosor del muro (m)', this.estilo.grosorMuro, 0.05, 0.6, 0.01, (v) => (this.estilo.grosorMuro = v)));
       p.append(this.campoColor('Color del muro', this.estilo.muro, (c) => (this.estilo.muro = c)));
       if (this.herr === 'cuarto') p.append(this.campoColor('Color de fondo', this.estilo.fondoCuarto, (c) => (this.estilo.fondoCuarto = c), ['#ffffff', ...RELLENOS]));
+    } else if (this.herr === 'imagen') {
+      p.append(h('div', { className: 'crq-botones' }, [this.boton('Elegir imagen…', 'Abrir una imagen de tu equipo', () => this.elegirImagen())]));
+      p.append(h('p', { textContent: 'Luego ajusta su tamaño con la esquina, gírala con la manija redonda y cambia su transparencia en el panel.' }));
     } else if (this.herr === 'chaflan') {
       p.append(this.campoNum('Distancia del corte (m)', this.estilo.chaflan, 0.1, 20, 0.05, (v) => (this.estilo.chaflan = v)));
     } else if (this.herr === 'puerta2') {
@@ -561,8 +574,23 @@ export class Editor {
     if (this.herr === 'seleccionar' || this.herr === 'mano') {
       p.append(
         h('h3', { textContent: 'Atajos' }),
-        h('p', { innerHTML: 'Ctrl+Z deshacer · Ctrl+Y rehacer<br>Supr borrar · Ctrl+D duplicar<br>Flechas mover · R girar<br>Rueda: zoom · Espacio+arrastrar: mover vista' }),
+        h('p', { innerHTML: 'Ctrl+Z deshacer · Ctrl+Y rehacer<br>Supr borrar · Ctrl+D duplicar<br>Flechas mover · R girar<br>Ctrl+V pegar una imagen<br>Rueda: zoom · Espacio+arrastrar: mover vista' }),
       );
+      const bloqueadas = this.datos.elementos.filter((e): e is Imagen => e.tipo === 'imagen' && !!e.bloqueada);
+      if (bloqueadas.length) {
+        p.append(
+          h('p', { textContent: bloqueadas.length === 1 ? 'Hay una imagen bloqueada: no se selecciona con un clic.' : `Hay ${bloqueadas.length} imágenes bloqueadas: no se seleccionan con un clic.` }),
+          h('div', { className: 'crq-botones' }, [
+            this.boton('Desbloquear imágenes', 'Permite volver a seleccionarlas en el lienzo', () => {
+              this.registrar();
+              bloqueadas.forEach((b) => delete b.bloqueada);
+              this.seleccion = new Set(bloqueadas.map((b) => b.id));
+              this.actualizarPanel();
+              this.notificar();
+            }),
+          ]),
+        );
+      }
     }
   }
 
@@ -738,6 +766,7 @@ export class Editor {
       linea: 'Línea',
       trazo: (el as Trazo).camino ? 'Camino' : 'Trazo',
       norte: 'Orientación',
+      imagen: 'Imagen',
     };
     p.append(h('h3', { textContent: nombres[el.tipo] }));
     switch (el.tipo) {
@@ -837,6 +866,42 @@ export class Editor {
           }
         }
         break;
+      case 'imagen': {
+        const valor = h('span', { className: 'crq-valor', textContent: `${el.transparencia} %` });
+        const r = h('input', { type: 'range', min: '0', max: '95', step: '5', value: String(el.transparencia) });
+        r.addEventListener('input', () => {
+          valor.textContent = `${r.value} %`;
+          this.editar(() => (el.transparencia = Number(r.value)), false);
+        });
+        r.addEventListener('change', () => this.editar(() => (el.transparencia = Number(r.value)), true));
+        p.append(h('label', { className: 'crq-campo' }, [h('span', { className: 'crq-fila-etq' }, ['Transparencia', valor]), r]));
+        const k = el.alto / el.ancho;
+        p.append(
+          this.campoNum('Ancho (m)', +el.ancho.toFixed(2), 0.1, 500, 0.1, (v) => {
+            el.ancho = v;
+            el.alto = v * k;
+          }),
+        );
+        p.append(
+          this.campoNum('Alto (m)', +el.alto.toFixed(2), 0.1, 500, 0.1, (v) => {
+            el.alto = v;
+            el.ancho = v / k;
+          }),
+        );
+        p.append(this.campoNum('Ángulo (°)', Math.round((el.ang * 180) / Math.PI), -360, 360, 15, (v) => (el.ang = (v * Math.PI) / 180)));
+        p.append(this.campoCheck('Encima del dibujo', !!el.encima, (v) => (el.encima = v)));
+        p.append(
+          this.campoCheck('Bloquear (no se selecciona con un clic, para calcar encima)', !!el.bloqueada, (v) => {
+            el.bloqueada = v;
+            if (v) {
+              this.seleccion.delete(el.id);
+              this.actualizarPanel();
+            }
+          }),
+        );
+        p.append(h('p', { textContent: 'Arrastra la esquina para cambiar el tamaño sin deformarla (Shift para deformarla). Para calcar un plano, dale su medida real con el ancho o el alto. Si un cuarto con fondo la tapa, activa «Encima del dibujo».' }));
+        break;
+      }
       case 'texto': {
         const t = this.campoTexto('Texto', el.texto, (v) => (el.texto = v), true);
         p.append(t);
@@ -899,7 +964,7 @@ export class Editor {
   private accionesSeleccion() {
     const cont = h('div', { className: 'crq-botones' });
     const sel = this.seleccionados();
-    if (sel.some((e) => e.tipo === 'mueble' || e.tipo === 'puerta' || e.tipo === 'ventana' || e.tipo === 'texto' || e.tipo === 'norte')) {
+    if (sel.some((e) => e.tipo === 'mueble' || e.tipo === 'puerta' || e.tipo === 'ventana' || e.tipo === 'texto' || e.tipo === 'norte' || e.tipo === 'imagen')) {
       cont.append(this.boton('Girar 90°', 'Girar (R)', () => this.girarSeleccion(Math.PI / 2)));
     }
     cont.append(
@@ -978,7 +1043,7 @@ export class Editor {
 
   private aplicarColor(el: Elemento, c: string) {
     if (el.tipo === 'area') el.borde = c;
-    else if (el.tipo !== 'norte') el.color = c;
+    else if (el.tipo !== 'norte' && el.tipo !== 'imagen') el.color = c;
   }
 
   // ───────────────────────── Historial ─────────────────────────
@@ -1085,7 +1150,7 @@ export class Editor {
     if (!sel.length) return;
     this.registrar();
     for (const el of sel) {
-      if (el.tipo === 'mueble' || el.tipo === 'texto' || el.tipo === 'norte') el.ang = normalizarAng(el.ang + ang);
+      if (el.tipo === 'mueble' || el.tipo === 'texto' || el.tipo === 'norte' || el.tipo === 'imagen') el.ang = normalizarAng(el.ang + ang);
       else if (el.tipo === 'puerta') {
         // Recorre las 4 orientaciones de la puerta sobre el mismo muro
         if (!el.invertir && !el.espejo) el.espejo = true;
@@ -1674,13 +1739,13 @@ export class Editor {
   private elementoEn(p: Pt): Elemento | null {
     const tol = this.tol(6);
     // Primero los de encima (orden de dibujo invertido); las áreas al final
-    const prioridad = (e: Elemento) => (e.tipo === 'area' ? 0 : e.tipo === 'muro' ? 1 : 2);
+    const prioridad = (e: Elemento) => (e.tipo === 'imagen' ? (e.encima ? 3 : -1) : e.tipo === 'area' ? 0 : e.tipo === 'muro' ? 1 : 2);
     // Entre áreas que se encimen gana la más chica, para poder elegir un cuarto que está dentro de otro.
     const tam = (e: Elemento) => (e.tipo === 'area' ? Math.abs(areaPoligono(e.puntos)) : 0);
     const lista = this.datos.elementos
       .map((e, i) => ({ e, i }))
       .sort((a, b) => prioridad(b.e) - prioridad(a.e) || tam(a.e) - tam(b.e) || b.i - a.i);
-    for (const { e } of lista) if (toca(e, p, tol)) return e;
+    for (const { e } of lista) if (!(e.tipo === 'imagen' && e.bloqueada) && toca(e, p, tol)) return e;
     return null;
   }
 
@@ -1719,6 +1784,12 @@ export class Editor {
       return [...vertices.map((p, i) => ({ cual: i, p })), ...etq];
     }
     if (el.tipo === 'norte') return [{ cual: 'rot', p: aMundo({ x: 0, y: -el.tam * 0.8 - this.tol(14) }, el.p, el.ang) }];
+    if (el.tipo === 'imagen') {
+      return [
+        { cual: 'rot', p: aMundo({ x: 0, y: -el.alto / 2 - this.tol(22) }, el.p, el.ang) },
+        { cual: 'tam', p: aMundo({ x: el.ancho / 2, y: el.alto / 2 }, el.p, el.ang) },
+      ];
+    }
     if (el.tipo === 'mueble') {
       return [
         { cual: 'rot', p: aMundo({ x: 0, y: -el.alto / 2 - this.tol(22) }, el.p, el.ang) },
@@ -1823,6 +1894,7 @@ export class Editor {
                 if (dist(o.b, q) < 1e-6) vinculados.push({ el: o, extremo: 'b' });
               }
             }
+            if (el.tipo === 'imagen') this.proporcion = el.ancho / el.alto;
             this.accion = { k: 'manija', id: el.id, cual: m.cual, previo: this.instantanea(), vinculados };
             return;
           }
@@ -1880,6 +1952,9 @@ export class Editor {
         this.agregar(m);
         return;
       }
+      case 'imagen':
+        this.elegirImagen(p);
+        return;
       case 'norte': {
         // Solo un norte por croquis: si ya existe, se mueve al nuevo punto
         const previo = this.datos.elementos.find((e): e is Norte => e.tipo === 'norte');
@@ -2076,6 +2151,26 @@ export class Editor {
       let ang = Math.atan2(p.y - el.p.y, p.x - el.p.x) + Math.PI / 2;
       if (!this.shift) ang = Math.round(ang / (Math.PI / 36)) * (Math.PI / 36);
       el.ang = normalizarAng(ang);
+    } else if (el.tipo === 'imagen') {
+      if (a.cual === 'rot') {
+        let ang = Math.atan2(p.y - el.p.y, p.x - el.p.x) + Math.PI / 2;
+        if (!this.shift) ang = Math.round(ang / (Math.PI / 12)) * (Math.PI / 12);
+        el.ang = normalizarAng(ang);
+      } else if (a.cual === 'tam') {
+        // Se agranda desde el centro; sin Shift conserva la proporción de la imagen
+        const l = puntoLocal(el, p);
+        const w = Math.max(0.1, Math.abs(l.x) * 2);
+        const hh = Math.max(0.1, Math.abs(l.y) * 2);
+        if (this.shift) {
+          el.ancho = w;
+          el.alto = hh;
+        } else {
+          const k = this.proporcion;
+          const ancho = Math.max(w, hh * k);
+          el.ancho = ancho;
+          el.alto = ancho / k;
+        }
+      }
     } else if (el.tipo === 'mueble') {
       if (a.cual === 'rot') {
         let ang = Math.atan2(p.y - el.p.y, p.x - el.p.x) + Math.PI / 2;
@@ -2134,6 +2229,7 @@ export class Editor {
         const y1 = Math.max(a.a.y, a.b.y);
         if (x1 - x0 > this.tol(3) || y1 - y0 > this.tol(3)) {
           for (const el of this.datos.elementos) {
+            if (el.tipo === 'imagen' && el.bloqueada) continue;
             const c = cajaDe(el);
             if (c.minx >= x0 && c.maxx <= x1 && c.miny >= y0 && c.maxy <= y1) this.seleccion.add(el.id);
           }
@@ -2210,7 +2306,7 @@ export class Editor {
       if (ctrl && k === 'a') {
         e.preventDefault();
         this.cambiarHerramienta('seleccionar');
-        this.seleccion = new Set(this.datos.elementos.map((x) => x.id));
+        this.seleccion = new Set(this.datos.elementos.filter((x) => !(x.tipo === 'imagen' && x.bloqueada)).map((x) => x.id));
         this.actualizarPanel();
         this.dibujar();
         return;
@@ -2443,6 +2539,96 @@ export class Editor {
     }
   }
 
+  // ───────────────────────── Imágenes pegadas ─────────────────────────
+
+  /** Ctrl+V con una imagen en el portapapeles y arrastrar archivos de imagen al lienzo. */
+  private escucharImagenes() {
+    const pegar = (e: ClipboardEvent) => {
+      if (!this.raiz.isConnected) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      const archivo = [...(e.clipboardData?.items ?? [])].find((i) => i.kind === 'file' && i.type.startsWith('image/'))?.getAsFile();
+      if (!archivo) return;
+      e.preventDefault();
+      this.insertarImagen(archivo);
+    };
+    const lienzo = this.canvas.parentElement!;
+    const conImagen = (e: DragEvent) => [...(e.dataTransfer?.items ?? [])].some((i) => i.kind === 'file' && i.type.startsWith('image/'));
+    const encima = (e: DragEvent) => {
+      if (!conImagen(e)) return;
+      e.preventDefault();
+      e.dataTransfer!.dropEffect = 'copy';
+      lienzo.classList.add('crq-soltar');
+    };
+    const fuera = () => lienzo.classList.remove('crq-soltar');
+    const soltar = (e: DragEvent) => {
+      fuera();
+      const archivos = [...(e.dataTransfer?.files ?? [])].filter((f) => f.type.startsWith('image/'));
+      if (!archivos.length) return;
+      e.preventDefault();
+      const s = this.enPantalla(e);
+      const p = this.isometrico ? undefined : this.aMundo(s.x, s.y);
+      archivos.forEach((f, i) => this.insertarImagen(f, p && { x: p.x + i * 0.5, y: p.y + i * 0.5 }));
+    };
+    document.addEventListener('paste', pegar);
+    lienzo.addEventListener('dragover', encima);
+    lienzo.addEventListener('dragleave', fuera);
+    lienzo.addEventListener('drop', soltar);
+    const dejar = alCargarImagen(() => this.dibujar());
+    return () => {
+      document.removeEventListener('paste', pegar);
+      dejar();
+    };
+  }
+
+  /** Abre el selector de archivos; la imagen se centra en `p` (o en la vista). */
+  private elegirImagen(p?: Pt) {
+    const i = document.createElement('input');
+    i.type = 'file';
+    i.accept = 'image/*';
+    i.addEventListener('change', () => {
+      const f = i.files?.[0];
+      if (f) this.insertarImagen(f, p);
+    });
+    i.click();
+  }
+
+  /** Agrega la imagen al croquis, del tamaño de la vista, y la deja seleccionada para ajustarla. */
+  async insertarImagen(archivo: Blob, centro?: Pt) {
+    let prep;
+    try {
+      prep = await prepararImagen(archivo);
+    } catch {
+      this.aviso('No se pudo leer la imagen.');
+      return;
+    }
+    // La imagen se edita en el plano
+    if (this.isometrico) this.cambiarVista('plano');
+    const r = this.canvas.getBoundingClientRect();
+    const c = centro ?? this.aMundo(r.width / 2, r.height / 2);
+    // Ocupa como mucho el 70 % de lo que se ve, sin pasar del tamaño original a 100 px por metro
+    const maxW = (r.width * 0.7) / this.vista.escala;
+    const maxH = (r.height * 0.7) / this.vista.escala;
+    const k = Math.min(maxW / prep.ancho, maxH / prep.alto, 1 / 100);
+    const clave = nuevoId();
+    this.datos.imagenes = { ...this.datos.imagenes, [clave]: prep.url };
+    const el: Imagen = {
+      id: nuevoId(),
+      tipo: 'imagen',
+      p: { x: c.x, y: c.y },
+      ancho: +(prep.ancho * k).toFixed(3),
+      alto: +(prep.alto * k).toFixed(3),
+      ang: 0,
+      img: clave,
+      transparencia: 30,
+    };
+    this.agregar(el);
+    if (this.herr !== 'seleccionar') this.cambiarHerramienta('seleccionar');
+    this.seleccion = new Set([el.id]);
+    this.actualizarPanel();
+    this.dibujar();
+  }
+
   // ───────────────────────── Archivos y resultado ─────────────────────────
 
   imagen(): ImagenCroquis {
@@ -2452,7 +2638,7 @@ export class Editor {
   private guardar() {
     this.terminarPoli();
     const img = this.imagen();
-    this.o.alGuardar?.({ datos: JSON.parse(JSON.stringify(this.datos)), ...img });
+    this.o.alGuardar?.({ datos: datosLimpios(this.datos), ...img });
   }
 
   private cancelar() {
@@ -2467,7 +2653,7 @@ export class Editor {
       a.href = this.imagen().png;
       a.download = this.isometrico ? `croquis-isometrico-${fecha}.png` : `croquis-${fecha}.png`;
     } else {
-      a.href = URL.createObjectURL(new Blob([JSON.stringify(this.datos)], { type: 'application/json' }));
+      a.href = URL.createObjectURL(new Blob([JSON.stringify(datosLimpios(this.datos))], { type: 'application/json' }));
       a.download = `croquis-${fecha}.croquis.json`;
     }
     a.click();
@@ -2485,6 +2671,7 @@ export class Editor {
         this.registrar();
         this.datos.elementos = d.elementos;
         this.datos.opciones = d.opciones;
+        this.datos.imagenes = { ...this.datos.imagenes, ...d.imagenes };
         this.seleccion.clear();
         this.actualizarPanel();
         this.notificar();

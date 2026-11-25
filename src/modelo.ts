@@ -117,6 +117,25 @@ export interface Trazo extends Base {
   recto?: boolean;
 }
 
+/** Imagen pegada o importada (p. ej. la foto de un plano para calcar encima). */
+export interface Imagen extends Base {
+  tipo: 'imagen';
+  /** Centro de la imagen. */
+  p: Pt;
+  /** Medidas de la imagen en el croquis, en metros. */
+  ancho: number;
+  alto: number;
+  ang: number;
+  /** Clave de la imagen en `DatosCroquis.imagenes` (así el historial no copia la imagen en cada paso). */
+  img: string;
+  /** Transparencia en %, de 0 (opaca) a 95. */
+  transparencia: number;
+  /** Se dibuja encima del croquis en vez de debajo. */
+  encima?: boolean;
+  /** No se selecciona con un clic en el lienzo (para calcar encima sin moverla). */
+  bloqueada?: boolean;
+}
+
 export type PuntoCardinal = 'N' | 'S' | 'E' | 'O';
 
 /** Indicador de orientación: una letra fija (N, S, E u O) con una flecha roja que apunta hacia ese punto cardinal. */
@@ -131,12 +150,14 @@ export interface Norte extends Base {
   tam: number;
 }
 
-export type Elemento = Muro | Abertura | Area | Mueble | Texto | Acceso | Cota | Linea | Trazo | Norte;
+export type Elemento = Muro | Abertura | Area | Mueble | Texto | Acceso | Cota | Linea | Trazo | Norte | Imagen;
 export type ConDosPuntos = Muro | Acceso | Cota | Linea;
 
 export interface DatosCroquis {
   version: 1;
   elementos: Elemento[];
+  /** Imágenes usadas por los elementos `imagen`, como data URL, por clave. */
+  imagenes?: Record<string, string>;
   opciones: {
     /** Muestra la longitud de cada muro. */
     medidasMuros: boolean;
@@ -164,11 +185,21 @@ export function normalizarDatos(d: unknown): DatosCroquis {
   const base = datosVacios();
   if (!d || typeof d !== 'object') return base;
   const o = d as Partial<DatosCroquis>;
-  return {
+  const r: DatosCroquis = {
     version: 1,
     elementos: Array.isArray(o.elementos) ? o.elementos : [],
     opciones: { ...base.opciones, ...(o.opciones ?? {}) },
   };
+  if (o.imagenes && typeof o.imagenes === 'object') r.imagenes = { ...o.imagenes };
+  return r;
+}
+
+/** Copia del croquis sin las imágenes que ya ningún elemento usa (las que quedan solo por el historial). */
+export function datosLimpios(d: DatosCroquis): DatosCroquis {
+  const r: DatosCroquis = JSON.parse(JSON.stringify({ ...d, imagenes: undefined }));
+  const usadas = new Set(d.elementos.flatMap((e) => (e.tipo === 'imagen' ? [e.img] : [])));
+  if (usadas.size) r.imagenes = Object.fromEntries([...usadas].filter((k) => d.imagenes?.[k]).map((k) => [k, d.imagenes![k]]));
+  return r;
 }
 
 let contador = 0;

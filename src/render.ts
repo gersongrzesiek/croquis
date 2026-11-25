@@ -2,7 +2,8 @@ import { dibujarSimbolo } from './catalogo';
 import { contorno, posEtiqueta, puntosTrazo } from './elementos';
 import { alturaModelo, focoRayos } from './muebles3d';
 import { aMundo, areaPoligono, dist, enPoligono, formatoM, largosAcumulados, puntoEnRecorrido } from './geometria';
-import type { Abertura, Area, DatosCroquis, Elemento, Mueble, Muro, Patron, Pt, Trazo } from './modelo';
+import { imagenLista } from './imagenes';
+import type { Abertura, Area, DatosCroquis, Elemento, Imagen, Mueble, Muro, Patron, Pt, Trazo } from './modelo';
 
 /** pantalla = mundo * escala + o */
 export interface Vista {
@@ -33,6 +34,7 @@ const ORDEN: Record<Elemento['tipo'], number> = {
   acceso: 6,
   texto: 7,
   norte: 8,
+  imagen: -1,
 };
 
 const cachePatrones = new Map<string, CanvasPattern | null>();
@@ -482,6 +484,9 @@ export function dibujarElemento(ctx: CanvasRenderingContext2D, el: Elemento, d: 
         });
       }
       break;
+    case 'imagen':
+      dibujarImagen(ctx, el, d, escala);
+      break;
     case 'norte':
       dibujarNorte(ctx, el.p, el.ang, el.tam, el.punto ?? 'N');
       break;
@@ -677,8 +682,26 @@ function dibujarCuadricula(ctx: CanvasRenderingContext2D, v: Vista, ancho: numbe
   }
 }
 
+/** Imagen pegada, con su transparencia. Mientras se carga se ve solo su marco. */
+function dibujarImagen(ctx: CanvasRenderingContext2D, el: Imagen, d: DatosCroquis, escala: number) {
+  ctx.translate(el.p.x, el.p.y);
+  ctx.rotate(el.ang);
+  const img = imagenLista(d.imagenes?.[el.img]);
+  if (img) {
+    ctx.globalAlpha = 1 - Math.min(95, Math.max(0, el.transparencia)) / 100;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, -el.ancho / 2, -el.alto / 2, el.ancho, el.alto);
+  } else {
+    ctx.strokeStyle = '#9ca3af';
+    ctx.lineWidth = 1 / escala;
+    ctx.setLineDash([4 / escala, 3 / escala]);
+    ctx.strokeRect(-el.ancho / 2, -el.alto / 2, el.ancho, el.alto);
+  }
+}
+
 /** El transfer va en el vano de la puerta: se dibuja encima de ella para que no lo tape. */
-const rango = (el: Elemento) => (el.tipo === 'mueble' && (el.clave === 'transfer' || el.clave === 'transfer-barrera') ? 4.5 : ORDEN[el.tipo]);
+const rango = (el: Elemento) =>
+  el.tipo === 'mueble' && (el.clave === 'transfer' || el.clave === 'transfer-barrera') ? 4.5 : el.tipo === 'imagen' && el.encima ? 9 : ORDEN[el.tipo];
 
 export function ordenar(els: Elemento[]): Elemento[] {
   return els

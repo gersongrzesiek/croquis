@@ -2,6 +2,7 @@ const svg = (cuerpo: string) =>
   `<svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${cuerpo}</svg>`;
 
 export const ICONOS: Record<string, string> = {
+  imagen: svg('<rect x="3" y="4" width="14" height="12" rx="1.5"/><circle cx="7.5" cy="8" r="1.3"/><path d="M3.5 14.5l4.5-4 3 2.5 2.5-2 3 3"/>'),
   seleccionar: svg('<path d="M5 3l10 6.5-4.5 1L8.5 15z" fill="currentColor" stroke="none"/>'),
   mano: svg('<path d="M7 10V5.5a1 1 0 012 0V9M9 9V4a1 1 0 012 0v5M11 9V5a1 1 0 012 0v5M13 10V7.5a1 1 0 012 0V12c0 3-2 5-5 5-2 0-3.2-.8-4.2-2.4L4 11.5a1 1 0 011.6-1.2L7 12"/>'),
   muro: svg('<path d="M3 7h14v5H3z" fill="currentColor"/>'),

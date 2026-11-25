@@ -69,6 +69,7 @@ export const CSS = `
 .crq-tip kbd{font:500 11px/1 var(--crq-mono);min-width:18px;height:18px;padding:0 4px;display:inline-flex;align-items:center;justify-content:center;
   border-radius:4px;background:color-mix(in srgb,var(--crq-panel) 18%,transparent);color:var(--crq-panel)}
 .crq-lienzo{flex:1;position:relative;min-width:0;overflow:hidden}
+.crq-lienzo.crq-soltar::after{content:'Suelta la imagen para agregarla';position:absolute;inset:8px;display:flex;align-items:center;justify-content:center;border:2px dashed var(--crq-acento,#1f5fbf);border-radius:8px;background:rgba(31,95,191,.06);color:var(--crq-acento,#1f5fbf);font-weight:600;pointer-events:none}
 .crq-lienzo canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none;display:block}
 
 .crq-panel{flex:0 0 280px;width:280px;min-width:280px;background:var(--crq-panel);border-left:1px solid var(--crq-borde);overflow-y:auto;overflow-x:hidden;padding:16px;display:flex;flex-direction:column;gap:16px}

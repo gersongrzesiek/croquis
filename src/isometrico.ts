@@ -907,7 +907,7 @@ export function dibujarIsometrico(ctx: CanvasRenderingContext2D, d: DatosCroquis
   ctx.translate(v.ox, v.oy);
   ctx.scale(v.escala, v.escala);
 
-  // 1. Piso: áreas, líneas, cotas, accesos, giros de puertas y muebles planos, como pintados en el suelo
+  // 1. Piso: imágenes, áreas, líneas, cotas, accesos, giros de puertas y muebles planos, como pintados en el suelo
   ctx.save();
   plano(ctx, 0, g);
   for (const el of todos) {
@@ -917,7 +917,7 @@ export function dibujarIsometrico(ctx: CanvasRenderingContext2D, d: DatosCroquis
     else if (el.tipo === 'mueble') piso = alturaMueble(el) <= 0.05 ? { ...el, etiqueta: '' } : null;
     else if (el.tipo === 'puerta') piso = el;
     else if (el.tipo === 'ventana') piso = enMuro.has(el.id) ? null : el;
-    else if (el.tipo === 'linea' || el.tipo === 'trazo' || el.tipo === 'cota') piso = el;
+    else if (el.tipo === 'linea' || el.tipo === 'trazo' || el.tipo === 'cota' || el.tipo === 'imagen') piso = el;
     if (piso) dibujarElemento(ctx, piso, { ...d, opciones: { ...d.opciones, medidasMuros: false } }, v.escala, fondo);
   }
   ctx.restore();

@@ -42,6 +42,7 @@ export function contorno(el: Elemento): Pt[] {
     case 'trazo':
       return puntosTrazo(el);
     case 'mueble':
+    case 'imagen':
       return esquinasCaja(el.p, el.ancho, el.alto, el.ang);
     case 'puerta':
     case 'ventana': {

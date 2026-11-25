@@ -1,5 +1,6 @@
 // Página independiente: editor a pantalla completa con autoguardado local.
 import { montar, normalizarDatos } from './index';
+import { datosLimpios } from './modelo';
 
 const CLAVE = 'croquis:datos:v1';
 let datos = null;
@@ -17,7 +18,7 @@ montar(document.getElementById('app')!, {
   titulo: 'Croquis',
   alCambiar: (d) => {
     try {
-      localStorage.setItem(CLAVE, JSON.stringify(d));
+      localStorage.setItem(CLAVE, JSON.stringify(datosLimpios(d)));
     } catch {
       /* almacenamiento no disponible */
     }
