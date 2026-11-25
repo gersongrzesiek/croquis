@@ -606,13 +606,49 @@ export function modeloMueble(el: Mueble): Pieza[] {
       caja(0, 0, 1, 1, 0.7, 0.8, MAT.blanco);
       caja(0.15, 0.35, 0.85, 0.65, 0.8, 0.81, MAT.oscuro);
       break;
-    case 'anestesia':
-      ruedas();
-      caja(0.05, 0.05, 0.95, 0.95, 0.08, 1.0, MAT.blanco);
-      caja(0, 0, 1, 1, 1.0, 1.03, MAT.metal);
-      caja(0.15, 0.05, 0.85, 0.2, 1.03, 1.45, MAT.oscuro);
-      caja(0.18, 0.2, 0.82, 0.21, 1.08, 1.4, MAT.cristal);
+    case 'anestesia': {
+      // Máquina de anestesia: carro con base oscura y ruedas, cuerpo blanco con tres cajones, mesa de trabajo,
+      // módulo del ventilador con pantalla y perillas, vaporizadores, dos monitores arriba, bolsa y canister al lado.
+      const r = 0.055;
+      for (const [fx, fy] of [[0.1, 0.12], [0.9, 0.12], [0.1, 0.9], [0.9, 0.9]]) cilF(fx, fy, r * 0.45, r, 0, r * 2, MAT.negro, 10);
+      caja(0.04, 0.04, 0.96, 0.98, r * 2, r * 2 + 0.06, MAT.oscuro);
+      caja(0.14, 0.1, 0.86, 0.9, r * 2 + 0.06, 0.86, MAT.blanco);
+      // Frentes de los cajones (al frente, y positiva) con su jaladera
+      const yf = D / 2 - D * 0.1;
+      for (const [z0, z1] of [[0.2, 0.42], [0.43, 0.63], [0.64, 0.84]]) {
+        cajaM(-W / 2 + W * 0.15, yf, W / 2 - W * 0.15, yf + 0.012, z0, z1, MAT.blanco);
+        cajaM(-W * 0.22, yf + 0.012, W * 0.22, yf + 0.022, z1 - 0.05, z1 - 0.03, MAT.oscuro);
+      }
+      // Mesa de trabajo oscura con borde claro y riel lateral
+      caja(0.04, 0.06, 0.98, 1, 0.86, 0.9, MAT.oscuro);
+      caja(0.04, 0.97, 0.98, 1, 0.84, 0.86, MAT.metal);
+      caja(0.98, 0.3, 1, 0.9, 0.86, 0.89, MAT.metal);
+      // Módulo del ventilador: pantalla, perillas y vaporizadores
+      caja(0.26, 0.12, 0.76, 0.42, 0.9, 1.26, MAT.blanco);
+      caja(0.3, 0.42, 0.72, 0.425, 0.98, 1.22, MAT.negro);
+      caja(0.42, 0.425, 0.6, 0.43, 1.06, 1.18, MAT.cristal);
+      for (const fx of [0.36, 0.48, 0.6]) cilF(fx, 0.43, 0.018, 0.012, 0.99, 1.03, MAT.metal, 8);
+      caja(0.8, 0.2, 0.87, 0.36, 0.9, 1.18, MAT.blanco);
+      caja(0.8, 0.2, 0.87, 0.36, 1.18, 1.21, MAT.amarillo);
+      caja(0.89, 0.2, 0.96, 0.36, 0.9, 1.18, MAT.blanco);
+      caja(0.89, 0.2, 0.96, 0.36, 1.18, 1.21, MAT.azul);
+      // Poste y dos monitores
+      cilF(0.5, 0.2, 0.03, 0.03, 1.26, 1.5, MAT.metal, 10);
+      caja(0.2, 0.15, 0.8, 0.22, 1.48, 1.52, MAT.metal);
+      for (const [a, b] of [[0, 0.49], [0.51, 1]]) {
+        caja(a, 0.12, b, 0.17, 1.52, 1.92, MAT.blanco);
+        caja(a + 0.02, 0.17, b - 0.02, 0.175, 1.56, 1.9, MAT.negro);
+      }
+      // Brazo con la bolsa de reinhalación (verde) y el canister del absorbedor al costado izquierdo
+      caja(-0.02, 0.24, 0.16, 0.28, 1.3, 1.33, MAT.metal);
+      cajaM(-W / 2 - 0.005, -D / 2 + D * 0.24, -W / 2 + 0.015, -D / 2 + D * 0.28, 1.18, 1.33, MAT.metal);
+      cil(-W / 2 + 0.01, -D / 2 + D * 0.26, 0.05, 0.05, 0.85, 1.18, MAT.verde, 12);
+      cilF(0.08, 0.62, 0.055, 0.055, 0.5, 0.74, MAT.cristal, 12);
+      cilF(0.08, 0.62, 0.06, 0.06, 0.74, 0.78, MAT.blanco, 12);
+      // Frascos de aspiración abajo
+      for (const fy of [0.75, 0.88]) cilF(0.07, fy, 0.045, 0.045, 0.2, 0.42, MAT.cristal, 10);
       break;
+    }
     case 'mesa-mayo': {
       // Base en U con ruedas, poste a un lado y charola en voladizo encima de la U
       const r = Math.min(0.025, D * 0.06);
