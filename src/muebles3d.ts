@@ -281,6 +281,39 @@ export function modeloMueble(el: Mueble): Pieza[] {
     case 'tarja':
       tarja(1, true);
       break;
+    case 'mesa-tarja-doble': {
+      // Mesa de acero inoxidable con dos tinas hundidas, escurridero, respaldo, entrepaño y patas redondas
+      const zt = 0.9;
+      const g = 0.03;
+      const tinasX: [number, number][] = [
+        [0.08, 0.36],
+        [0.39, 0.67],
+      ];
+      const [y0, y1] = [0.15, 0.88];
+      // Cubierta alrededor de las tinas (en tiras, para dejar los huecos)
+      caja(0, 0, 1, y0, zt - g, zt, MAT.inox);
+      caja(0, y1, 1, 1, zt - g, zt, MAT.inox);
+      caja(0, y0, tinasX[0][0], y1, zt - g, zt, MAT.inox);
+      caja(tinasX[0][1], y0, tinasX[1][0], y1, zt - g, zt, MAT.inox);
+      caja(tinasX[1][1], y0, 1, y1, zt - g, zt, MAT.inox, true);
+      // Faldón al frente y respaldo atrás
+      caja(0, 0.975, 1, 1, zt - 0.07, zt - g, MAT.inox);
+      caja(0, 0, 1, 0.03, zt, zt + 0.15, MAT.inox);
+      // Tinas: caja colgada bajo la cubierta, con el fondo oscuro que se ve por el hueco
+      for (const [a, b] of tinasX) {
+        caja(a, y0, b, y1, zt - 0.32, zt - 0.06, MAT.metal);
+        caja(a + 0.01, y0 + 0.02, b - 0.01, y1 - 0.02, zt - 0.06, zt - 0.045, MAT.oscuro);
+      }
+      // Patas redondas, travesaños y entrepaño bajo
+      const ins = 0.05;
+      for (const sx of [-1, 1]) for (const sy of [-1, 1]) cil(sx * (W / 2 - ins), sy * (D / 2 - ins), 0.022, 0.022, 0, zt - g, MAT.metal, 10);
+      for (const sx of [-1, 1]) cajaM(sx * (W / 2 - ins) - 0.012, -D / 2 + ins, sx * (W / 2 - ins) + 0.012, D / 2 - ins, 0.5, 0.525, MAT.metal);
+      cajaM(-W / 2 + ins, -D / 2 + ins - 0.012, W / 2 - ins, -D / 2 + ins + 0.012, 0.5, 0.525, MAT.metal);
+      caja(0.02, 0.05, 0.98, 0.95, 0.15, 0.18, MAT.inox);
+      // Manguera de desagüe de la primera tina
+      cil(-W / 2 + W * 0.22, -D / 2 + D * 0.52, 0.02, 0.02, 0.18, zt - 0.32, MAT.metal, 8);
+      break;
+    }
     case 'tarja-doble':
     case 'lavabo-cirujano':
       tarja(2, false);

@@ -90,6 +90,7 @@ export const CATALOGO: ItemCatalogo[] = [
   // Alimentos (NOM-251-SSA1-2009)
   it('mesa-inox', 'Mesa de acero inoxidable', 1.5, 0.7),
   it('tarja-doble', 'Tarja de 2 tinas', 1.4, 0.6),
+  it('mesa-tarja-doble', 'Mesa con doble tarja', 1.8, 0.7),
   it('lavamanos', 'Lavamanos exclusivo', 0.5, 0.45),
   it('estufa-ind', 'Estufa industrial', 1.2, 0.8),
   it('horno', 'Horno', 0.9, 0.8),
@@ -132,7 +133,7 @@ export const CATEGORIAS: Categoria[] = [
     id: 'alimentos',
     nombre: 'Alimentos',
     norma: 'NOM-251-SSA1-2009',
-    claves: ['mesa-inox', 'tarja-doble', 'lavamanos', 'estufa-ind', 'horno', 'freidora', 'campana', 'refrigerador', 'congelador', 'camara-fria', 'anaquel', 'tarima', 'bascula', 'bote-pedal', 'trampa-grasa', 'coladera', 'rejilla-sup', 'rejilla-inf'],
+    claves: ['mesa-inox', 'tarja-doble', 'mesa-tarja-doble', 'lavamanos', 'estufa-ind', 'horno', 'freidora', 'campana', 'refrigerador', 'congelador', 'camara-fria', 'anaquel', 'tarima', 'bascula', 'bote-pedal', 'trampa-grasa', 'coladera', 'rejilla-sup', 'rejilla-inf'],
   },
 ];
 
@@ -686,6 +687,20 @@ export function dibujarSimbolo(ctx: CanvasRenderingContext2D, clave: string, w: 
       caja();
       tinas(2);
       break;
+    case 'mesa-tarja-doble': {
+      // Mesa de acero con dos tinas a la izquierda, escurridero a la derecha y respaldo atrás
+      caja();
+      lf(0, 0.07, 1, 0.07); // respaldo
+      for (const [a, b] of [[0.08, 0.36], [0.39, 0.67]]) {
+        redondo(a, 0.17, b - a, 0.7, 0.06);
+        circ(X((a + b) / 2), Y(0.52), m * 0.05);
+      }
+      // Escurridero con canales
+      ctx.lineWidth = lw * 0.6;
+      for (let i = 1; i <= 5; i++) lf(0.7 + (i * 0.27) / 6, 0.2, 0.7 + (i * 0.27) / 6, 0.85);
+      ctx.lineWidth = lw;
+      break;
+    }
     case 'estufa-ind':
       caja();
       hornillas(3, 2);
