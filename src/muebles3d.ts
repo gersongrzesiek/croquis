@@ -33,6 +33,7 @@ export const MAT = {
   maniqui: { color: '#8f949c', luzLados: [0.02, 0.5], luzTapa: 0.62 },
   crema: { color: '#d9d3c3', luzLados: [0.35, 0.6], luzTapa: 0.8 },
   marino: { color: '#1e2b5e', luzLados: [0.02, 0.14], luzTapa: 0.18 },
+  azulRey: { color: '#2d3ca8', luzLados: [0.02, 0.16], luzTapa: 0.22 },
   azul: { color: '#2f6db5', luzLados: [0.15, 0.4], luzTapa: 0.5 },
   inox: { color: '#9aa3ad', luzLados: [0.3, 0.55], luzTapa: 0.7 },
 } satisfies Record<string, Material>;
@@ -77,7 +78,7 @@ export function focoRayos(el: Mueble): { p: Pt; z: number } {
 
 /** Piezas que forman el mueble. Una lista vacía significa que va plano en el piso (señales, coladeras…). */
 /** Muebles largos cuyo modelo va a lo largo (cabecera atrás, pies adelante). */
-export const LARGOS = new Set(['cama-hosp', 'camilla', 'camilla-traslado', 'mesa-exploracion', 'mesa-quirurgica', 'mesa-rx']);
+export const LARGOS = new Set(['cama-hosp', 'camilla', 'camilla-traslado', 'mesa-exploracion', 'mesa-quirurgica', 'mesa-obstetrica', 'cama-parto', 'mesa-rx']);
 
 export function modeloMueble(el: Mueble): Pieza[] {
   // Si se dibujó más ancho que largo, el modelo se gira para que siga el lado largo
@@ -537,6 +538,65 @@ export function modeloMueble(el: Mueble): Pieza[] {
       for (const [a, b, dz] of secciones) {
         caja(0.03, a, 0.97, b, 0.72 + dz, 0.77 + dz, MAT.metal);
         caja(0, a, 1, b, 0.77 + dz, 0.86 + dz, MAT.negro);
+      }
+      break;
+    }
+    case 'mesa-obstetrica': {
+      // Mesa de atención obstétrica: base y columna de acero, respaldo levantado, asiento con escotadura,
+      // sección de piernas más baja, pierneras y brazos de apoyo tapizados en azul, y volante de ajuste.
+      caja(0.08, 0.32, 0.92, 0.8, 0, 0.18, MAT.inox);
+      caja(0.28, 0.45, 0.72, 0.62, 0.18, 0.6, MAT.inox);
+      caja(0.06, 0.1, 0.94, 0.66, 0.6, 0.66, MAT.metal);
+      const zc = 0.66;
+      // Respaldo inclinado hacia la cabecera
+      inclinado(-W / 2 + W * 0.04, W / 2 - W * 0.04, -D / 2 + D * 0.45, -D / 2 + D * 0.04, zc, 38, 0.1, MAT.azulRey);
+      // Asiento: parte trasera completa y dos lados al frente, dejando la escotadura
+      caja(0.04, 0.45, 0.96, 0.56, zc, zc + 0.1, MAT.azulRey);
+      caja(0.04, 0.56, 0.34, 0.63, zc, zc + 0.1, MAT.azulRey);
+      caja(0.66, 0.56, 0.96, 0.63, zc, zc + 0.1, MAT.azulRey);
+      // Sección de piernas, más baja y separada
+      caja(0.08, 0.66, 0.92, 0.98, 0.5, 0.54, MAT.metal);
+      caja(0.04, 0.67, 0.96, 0.98, 0.54, 0.64, MAT.azulRey);
+      // Pierneras: poste con su soporte en cada lado
+      for (const fx of [0.03, 0.97]) {
+        cilF(fx, 0.58, 0.014, 0.014, zc, 1.0, MAT.metal, 8);
+        caja(fx - 0.06, 0.48, fx + 0.06, 0.66, 1.0, 1.07, MAT.azulRey);
+      }
+      // Brazos de apoyo junto al respaldo
+      for (const fx of [0, 0.95]) caja(fx, 0.18, fx + 0.05, 0.4, zc + 0.12, zc + 0.36, MAT.azulRey);
+      // Volante de ajuste al costado de la columna
+      cilF(0.25, 0.55, 0.012, 0.09, 0.32, 0.5, MAT.metal, 12);
+      break;
+    }
+    case 'cama-parto': {
+      // Cama de parto: base blanca con ruedas y tijera, cabecera y piecera con paneles azules,
+      // colchón azul en secciones (respaldo levantado, asiento con escotadura, piernas), pierneras y asas.
+      const r = 0.06;
+      for (const sx of [-1, 1]) for (const sy of [-1, 1]) cil(sx * (W / 2 - 0.1), sy * (D / 2 - 0.12), r * 0.45, r, 0, r * 2, MAT.oscuro, 10);
+      caja(0.08, 0.06, 0.92, 0.94, 0.12, 0.17, MAT.blanco);
+      caja(0.32, 0.35, 0.68, 0.65, 0.17, 0.5, MAT.blanco);
+      caja(0.03, 0.03, 0.97, 0.97, 0.5, 0.57, MAT.blanco);
+      for (const [a, b, alto] of [[0, 0.03, 1.05], [0.97, 1, 0.85]] as const) {
+        caja(0, a, 1, b, 0.42, alto, MAT.blanco);
+        caja(0.18, a - 0.004, 0.82, b + 0.004, 0.55, alto - 0.12, MAT.azul);
+      }
+      // Defensas azules en las esquinas
+      for (const [fx, fy] of [[0, 0.03], [0.95, 0.03], [0, 0.92], [0.95, 0.92]]) caja(fx, fy, fx + 0.05, fy + 0.05, 0.47, 0.6, MAT.azul);
+      const zc = 0.57;
+      inclinado(-W / 2 + W * 0.04, W / 2 - W * 0.04, -D / 2 + D * 0.45, -D / 2 + D * 0.06, zc, 32, 0.12, MAT.azulRey);
+      caja(0.04, 0.45, 0.96, 0.56, zc, zc + 0.12, MAT.azulRey);
+      caja(0.04, 0.56, 0.34, 0.64, zc, zc + 0.12, MAT.azulRey);
+      caja(0.66, 0.56, 0.96, 0.64, zc, zc + 0.12, MAT.azulRey);
+      caja(0.04, 0.66, 0.96, 0.96, zc, zc + 0.12, MAT.azulRey);
+      // Pierneras
+      for (const fx of [0.05, 0.95]) {
+        cilF(fx, 0.56, 0.012, 0.012, zc + 0.12, 1.0, MAT.metal, 8);
+        caja(fx - 0.05, 0.47, fx + 0.05, 0.63, 1.0, 1.07, MAT.azulRey);
+      }
+      // Asas laterales junto al respaldo
+      for (const fx of [0.005, 0.975]) {
+        for (const fy of [0.3, 0.44]) caja(fx, fy, fx + 0.02, fy + 0.015, zc, zc + 0.28, MAT.metal);
+        caja(fx, 0.3, fx + 0.02, 0.455, zc + 0.26, zc + 0.29, MAT.metal);
       }
       break;
     }

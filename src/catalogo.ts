@@ -43,6 +43,8 @@ export const CATALOGO: ItemCatalogo[] = [
   it('autoclave-emp', 'Autoclave empotrable', 0.9, 1.3),
   it('mesa-exploracion', 'Mesa de exploración', 0.7, 1.8),
   it('mesa-quirurgica', 'Mesa quirúrgica', 0.6, 2.0),
+  it('mesa-obstetrica', 'Mesa de atención obstétrica', 0.7, 1.9),
+  it('cama-parto', 'Cama de parto', 0.9, 2.0),
   it('transfer', 'Transfer / cambio de botas', 0.9, 0.4),
   it('transfer-barrera', 'Transfer (solo barrera)', 0.9, 0.4),
   it('lampara-quir', 'Lámpara quirúrgica', 0.9, 0.9),
@@ -116,7 +118,7 @@ export const CATEGORIAS: Categoria[] = [
     id: 'hospitalario',
     nombre: 'Hospitalario',
     norma: 'NOM-016-SSA3-2012',
-    claves: ['cama-hosp', 'camilla', 'camilla-traslado', 'mesa-exploracion', 'mesa-quirurgica', 'transfer', 'transfer-barrera', 'lampara-quir', 'anestesia', 'mesa-mayo', 'mesa-rinon', 'mesa-pasteur', 'carro-rojo', 'carro-curacion', 'portasueros', 'lavabo-cirujano', 'mesa-tarja', 'lavabo', 'asiento-giratorio', 'banqueta', 'negatoscopio', 'bote-rpbi', 'bote', 'autoclave-emp', 'rejilla-sup', 'rejilla-inf'],
+    claves: ['cama-hosp', 'camilla', 'camilla-traslado', 'mesa-exploracion', 'mesa-quirurgica', 'mesa-obstetrica', 'cama-parto', 'transfer', 'transfer-barrera', 'lampara-quir', 'anestesia', 'mesa-mayo', 'mesa-rinon', 'mesa-pasteur', 'carro-rojo', 'carro-curacion', 'portasueros', 'lavabo-cirujano', 'mesa-tarja', 'lavabo', 'asiento-giratorio', 'banqueta', 'negatoscopio', 'bote-rpbi', 'bote', 'autoclave-emp', 'rejilla-sup', 'rejilla-inf'],
   },
   {
     id: 'plagas',
@@ -154,7 +156,7 @@ export const itemsDeCategoria = (id: string) =>
  */
 export function dibujarSimbolo(ctx: CanvasRenderingContext2D, clave: string, w: number, h: number, color: string, lw: number) {
   // Camas y mesas largas dibujadas más anchas que largas: el símbolo sigue el lado largo
-  if (w > h && ['cama-hosp', 'camilla', 'camilla-traslado', 'mesa-exploracion', 'mesa-quirurgica', 'mesa-rx'].includes(clave)) {
+  if (w > h && ['cama-hosp', 'camilla', 'camilla-traslado', 'mesa-exploracion', 'mesa-quirurgica', 'mesa-obstetrica', 'cama-parto', 'mesa-rx'].includes(clave)) {
     ctx.save();
     ctx.rotate(Math.PI / 2);
     dibujarSimbolo(ctx, clave, h, w, color, lw);
@@ -371,6 +373,38 @@ export function dibujarSimbolo(ctx: CanvasRenderingContext2D, clave: string, w: 
       ctx.lineWidth = lw * 2;
       lf(0.14, 1.03, 0.86, 1.03); // tapa
       ctx.lineWidth = lw;
+      break;
+    }
+    case 'cama-parto':
+    case 'mesa-obstetrica': {
+      if (clave === 'cama-parto') {
+        // Cama: contorno con cabecera y piecera, ruedas en las esquinas
+        caja();
+        lf(0, 0.03, 1, 0.03);
+        lf(0, 0.97, 1, 0.97);
+        for (const [fx, fy] of [[0.08, 0.06], [0.92, 0.06], [0.08, 0.94], [0.92, 0.94]]) circ(X(fx), Y(fy), m * 0.04);
+      }
+      // Respaldo (cabecera arriba), asiento con escotadura, sección de piernas y pierneras a los lados
+      ctx.beginPath();
+      ctx.roundRect(X(0.04), Y(0.02), w * 0.92, h * 0.43, m * 0.08);
+      ctx.fill();
+      ctx.stroke();
+      // Asiento con la escotadura al frente
+      ctx.beginPath();
+      ctx.moveTo(X(0.04), Y(0.46));
+      ctx.lineTo(X(0.96), Y(0.46));
+      ctx.lineTo(X(0.96), Y(0.63));
+      ctx.lineTo(X(0.66), Y(0.63));
+      ctx.arc(0, Y(0.63), w * 0.16, 0, Math.PI, true);
+      ctx.lineTo(X(0.04), Y(0.63));
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      rect(0.04, 0.68, 0.92, 0.3); // sección de piernas
+      // Pierneras y brazos de apoyo
+      for (const fx of [0.02, 0.98]) circ(X(fx), Y(0.58), m * 0.09, '#ffffff');
+      rect(0, 0.2, 0.05, 0.18);
+      rect(0.95, 0.2, 0.05, 0.18);
       break;
     }
     case 'mesa-exploracion':
