@@ -282,10 +282,12 @@ function rebanada(
 }
 
 /** Aberturas que están sobre el muro, como intervalos a lo largo de su eje. */
-function aberturasDe(m: Muro, aberturas: Abertura[]): { s0: number; s1: number; tipo: Abertura['tipo'] }[] {
+type TipoHueco = Abertura['tipo'] | 'elevador';
+
+function aberturasDe(m: Muro, aberturas: Abertura[]): { s0: number; s1: number; tipo: TipoHueco }[] {
   const L = dist(m.a, m.b);
   const u = { x: (m.b.x - m.a.x) / L, y: (m.b.y - m.a.y) / L };
-  const res: { s0: number; s1: number; tipo: Abertura['tipo'] }[] = [];
+  const res: { s0: number; s1: number; tipo: TipoHueco }[] = [];
   for (const ab of aberturas) {
     const paralelo = Math.abs(Math.sin(ab.ang - Math.atan2(u.y, u.x))) < 0.05;
     if (!paralelo) continue;
@@ -294,7 +296,7 @@ function aberturasDe(m: Muro, aberturas: Abertura[]): { s0: number; s1: number; 
     const s = dx * u.x + dy * u.y;
     const n = Math.abs(dx * -u.y + dy * u.x);
     if (n > m.grosor / 2 + 0.02 || s < -0.01 || s > L + 0.01) continue;
-    res.push({ s0: Math.max(0, s - ab.ancho / 2), s1: Math.min(L, s + ab.ancho / 2), tipo: ab.tipo });
+    res.push({ s0: Math.max(0, s - ab.ancho / 2), s1: Math.min(L, s + ab.ancho / 2), tipo: ab.tipo === 'puerta' && ab.elevador ? 'elevador' : ab.tipo });
   }
   return res.sort((a, b) => a.s0 - b.s0);
 }
@@ -314,7 +316,7 @@ function prismasMuros(muros: Muro[], aberturas: Abertura[], o: OpcionesIso): Pri
     const u = { x: (m.b.x - m.a.x) / L, y: (m.b.y - m.a.y) / L };
     const base = m.a.x * u.x + m.a.y * u.y;
     // Tramos a lo largo del muro: macizo, puerta o ventana
-    const tramos: { s0: number; s1: number; tipo: 'macizo' | Abertura['tipo'] }[] = [];
+    const tramos: { s0: number; s1: number; tipo: 'macizo' | TipoHueco }[] = [];
     let s = -Infinity;
     for (const ab of aberturasDe(m, aberturas)) {
       if (ab.s0 > s) tramos.push({ s0: s, s1: ab.s0, tipo: 'macizo' });
@@ -330,12 +332,15 @@ function prismasMuros(muros: Muro[], aberturas: Abertura[], o: OpcionesIso): Pri
       const t0 = Math.max(t.s0, min);
       const t1 = Math.min(t.s1, max);
       if (t1 - t0 < 1e-6) continue;
-      const n = Math.max(1, Math.ceil((t1 - t0) / PIEZA));
-      const alturas: [number, number, 'muro' | 'vidrio'][] =
+      // La puerta de elevador va en dos hojas de acero cerradas que se juntan al centro
+      const n = t.tipo === 'elevador' ? 2 : Math.max(1, Math.ceil((t1 - t0) / PIEZA));
+      const alturas: [number, number, 'muro' | 'vidrio' | 'acero'][] =
         t.tipo === 'macizo'
           ? [[0, H, 'muro']]
           : t.tipo === 'puerta'
             ? [[ALTO_PUERTA, H, 'muro']]
+            : t.tipo === 'elevador'
+            ? [[0, ALTO_PUERTA, 'acero'], [ALTO_PUERTA, H, 'muro']]
             : [
                 [0, ANTEPECHO, 'muro'],
                 [ANTEPECHO, DINTEL_VENTANA, 'vidrio'],
@@ -350,9 +355,10 @@ function prismasMuros(muros: Muro[], aberturas: Abertura[], o: OpcionesIso): Pri
         for (const [z0, z1raw, cual] of alturas) {
           const z1 = Math.min(z1raw, H);
           if (z1 - z0 < 1e-6) continue;
-          if (cual === 'vidrio') {
-            // Vidrio delgado al centro del muro
-            const g = Math.min(0.02, m.grosor / 4);
+          if (cual === 'vidrio' || cual === 'acero') {
+            // Vidrio delgado (o la hoja de acero del elevador) al centro del muro
+            const acero = cual === 'acero';
+            const g = acero ? Math.min(0.03, m.grosor / 3) : Math.min(0.02, m.grosor / 4);
             const n0 = { x: -u.y, y: u.x };
             const c0 = { x: m.a.x + u.x * a, y: m.a.y + u.y * a };
             const c1 = { x: m.a.x + u.x * b, y: m.a.y + u.y * b };
@@ -366,11 +372,11 @@ function prismasMuros(muros: Muro[], aberturas: Abertura[], o: OpcionesIso): Pri
               pts: v,
               z0,
               z1,
-              corte: [false, corteFin, false, corteIni],
-              color: '#7fb4e0',
-              luzLados: [0.55, 0.7],
-              luzTapa: 0.4,
-              borde: '#5b8fbf',
+              corte: acero ? [false, false, false, false] : [false, corteFin, false, corteIni],
+              color: acero ? '#a7b0ba' : '#7fb4e0',
+              luzLados: acero ? [0.3, 0.55] : [0.55, 0.7],
+              luzTapa: acero ? 0.6 : 0.4,
+              borde: acero ? '#5f6b78' : '#5b8fbf',
               prof: 0,
               muro: m,
             });

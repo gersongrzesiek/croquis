@@ -48,6 +48,7 @@ export function contorno(el: Elemento): Pt[] {
     case 'ventana': {
       const g = el.grosor / 2;
       if (el.tipo === 'ventana') return esquinasCaja(el.p, el.ancho, el.grosor, el.ang);
+      if (el.elevador) return esquinasCaja(el.p, el.ancho, el.grosor + 0.4, el.ang);
       const hoja = el.hojas === 2 ? el.ancho / 2 : el.ancho;
       if (el.vaiven) return esquinasCaja(el.p, el.ancho, el.grosor + hoja * 2, el.ang, -g - hoja);
       const lado = el.invertir ? 1 : -1;

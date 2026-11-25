@@ -31,6 +31,8 @@ export interface Abertura extends Base {
   vaiven?: boolean;
   /** Número de hojas: 2 = doble puerta (tipo quirófano). */
   hojas?: 1 | 2;
+  /** Puerta de elevador: dos hojas corredizas que abren desde el centro (sin giro). */
+  elevador?: boolean;
   color: string;
 }
 export interface Area extends Base {
@@ -70,6 +72,8 @@ export interface Mueble extends Base {
   hazTransparencia?: number;
   /** Alcance del haz desde el frente del tubo, en metros. Sin valor, llega solo hasta el primer muro o mueble alto. */
   hazDistancia?: number;
+  /** Mueble empotrado (autoclave): grosor del muro que atraviesa, en metros. */
+  empotre?: number;
 }
 export interface Texto extends Base {
   tipo: 'texto';

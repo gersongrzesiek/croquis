@@ -1,7 +1,7 @@
-import { CATALOGO, CATEGORIAS, DE_MURO, dibujarSimbolo, itemPorClave, itemsDeCategoria, type ItemCatalogo } from './catalogo';
+import { CATALOGO, CATEGORIAS, DE_MURO, EMPOTRADOS, dibujarSimbolo, itemPorClave, itemsDeCategoria, type ItemCatalogo } from './catalogo';
 import { cajaDe, cajaDeTodos, mover, posEtiqueta, puntoLocal, puntosClave, toca } from './elementos';
 import { inyectarEstilos } from './estilos';
-import { exportarPNG, type ImagenCroquis } from './exportar';
+import { exportarPNG, tamanoImagen, type ImagenCroquis } from './exportar';
 import { aMundo, areaPoligono, dist, distBorde, enPoligono, formatoM, insetPoligono, lado, proyectar, recortarPoligono, simplificar } from './geometria';
 import { ICONOS } from './iconos';
 import { ALTURA_MUROS, aIso, dibujarIsometrico, encuadreIso, opcionesIso, usarElevacion } from './isometrico';
@@ -182,7 +182,7 @@ export class Editor {
   private busquedaMueble = '';
   private fantasmaAng = 0;
   private aberturaInvertir = false;
-  private estilo = { color: '#111827', muro: '#374151', grosorMuro: 0.15, relleno: '#bfdbfe', patron: 'ninguno' as Patron, acceso: '#16a34a', camino: '#dc2626', grosorCamino: 0.05, separacionCamino: 1, dobleSentido: false, caminoDiscontinuo: false, caminoRecto: false, fondoCuarto: '#ffffff', dobleHoja: false, chaflan: 1 };
+  private estilo = { color: '#111827', muro: '#374151', grosorMuro: 0.15, relleno: '#bfdbfe', patron: 'ninguno' as Patron, acceso: '#16a34a', camino: '#dc2626', grosorCamino: 0.05, separacionCamino: 1, dobleSentido: false, caminoDiscontinuo: false, caminoRecto: false, fondoCuarto: '#ffffff', dobleHoja: false, chaflan: 1, elevador: false };
   private pendiente: string | null = null;
   private punteros = new Map<number, Pt>();
   private pellizco: { d: number; c: Pt; escala: number; ox: number; oy: number } | null = null;
@@ -299,7 +299,7 @@ export class Editor {
         }, 'crq-borde'),
         this.boton('Abrir', 'Abrir un archivo .croquis.json', () => this.abrirArchivo(), 'crq-borde'),
         this.boton('Guardar', 'Descargar como .croquis.json', () => this.descargar('json'), 'crq-borde'),
-        this.boton('Descargar PNG', 'Descargar imagen', () => this.descargar('png'), 'crq-primario'),
+        this.boton('Descargar PNG', 'Descargar imagen', (e) => this.menuPNG(e.currentTarget as HTMLElement), 'crq-primario'),
       );
     }
 
@@ -332,7 +332,7 @@ export class Editor {
     this.raiz.append(barra, cuerpo, this.estado, tip);
   }
 
-  private boton(contenido: string, titulo: string, fn: () => void, clase = '') {
+  private boton(contenido: string, titulo: string, fn: (e: MouseEvent) => void, clase = '') {
     const b = h('button', { type: 'button', title: titulo, className: clase });
     b.innerHTML = contenido;
     b.addEventListener('click', fn);
@@ -537,6 +537,8 @@ export class Editor {
       p.append(h('p', { textContent: 'Luego ajusta su tamaño con la esquina, gírala con la manija redonda y cambia su transparencia en el panel.' }));
     } else if (this.herr === 'chaflan') {
       p.append(this.campoNum('Distancia del corte (m)', this.estilo.chaflan, 0.1, 20, 0.05, (v) => (this.estilo.chaflan = v)));
+    } else if (this.herr === 'puerta') {
+      p.append(this.campoCheck('Puerta de elevador (corrediza, sin giro)', this.estilo.elevador, (v) => (this.estilo.elevador = v), false));
     } else if (this.herr === 'puerta2') {
       p.append(this.campoCheck('Doble puerta (dos puertas que se juntan al centro, tipo quirófano)', this.estilo.dobleHoja, (v) => (this.estilo.dobleHoja = v), false));
     } else if (this.herr === 'area') {
@@ -568,7 +570,7 @@ export class Editor {
       p.append(this.campoNum('Distancia entre flechas (m)', this.estilo.separacionCamino, 0.3, 10, 0.1, (v) => (this.estilo.separacionCamino = v)));
       p.append(this.campoCheck('Doble sentido (ida y vuelta)', this.estilo.dobleSentido, (v) => (this.estilo.dobleSentido = v), false));
       p.append(this.campoCheck('Línea discontinua', this.estilo.caminoDiscontinuo, (v) => (this.estilo.caminoDiscontinuo = v), false));
-    } else if (this.herr !== 'seleccionar' && this.herr !== 'mano' && this.herr !== 'puerta' && this.herr !== 'ventana' && this.herr !== 'dividir' && this.herr !== 'norte') {
+    } else if (this.herr !== 'seleccionar' && this.herr !== 'mano' && this.herr !== 'ventana' && this.herr !== 'dividir' && this.herr !== 'norte') {
       p.append(this.campoColor('Color', this.estilo.color, (c) => (this.estilo.color = c)));
     }
     if (this.herr === 'seleccionar' || this.herr === 'mano') {
@@ -756,7 +758,7 @@ export class Editor {
     const p = this.panel;
     const nombres: Record<Elemento['tipo'], string> = {
       muro: (el as Muro).chaflan ? 'Corte de esquina' : 'Muro',
-      puerta: 'Puerta',
+      puerta: (el as Abertura).elevador ? 'Puerta de elevador' : 'Puerta',
       ventana: 'Ventana',
       area: (el as Area).muros?.length ? 'Cuarto' : 'Área',
       mueble: itemPorClave((el as Mueble).clave)?.nombre ?? 'Mueble',
@@ -797,6 +799,17 @@ export class Editor {
       case 'ventana':
         p.append(this.campoNum('Ancho (m)', el.ancho, 0.3, 6, 0.05, (v) => (el.ancho = v)));
         if (el.tipo === 'puerta') {
+          p.append(
+            this.campoCheck('Puerta de elevador (corrediza, sin giro)', !!el.elevador, (v) => {
+              if (v) el.elevador = true;
+              else delete el.elevador;
+              this.actualizarPanel();
+            }),
+          );
+        }
+        if (el.tipo === 'puerta' && el.elevador) {
+          p.append(this.campoCheck('Vestíbulo del otro lado', el.invertir, (v) => (el.invertir = v)));
+        } else if (el.tipo === 'puerta') {
           p.append(this.campoCheck('Doble abatimiento (vaivén)', !!el.vaiven, (v) => (el.vaiven = v)));
           p.append(this.campoCheck('Doble puerta (dos puertas)', el.hojas === 2, (v) => {
             el.hojas = v ? 2 : 1;
@@ -1269,9 +1282,9 @@ export class Editor {
   }
 
   /** Busca el muro más cercano para colocar una puerta o ventana. */
-  private colocarEnMuro(p: Pt, ancho: number): { p: Pt; ang: number; grosor: number } | null {
+  private colocarEnMuro(p: Pt, ancho: number, alcance = 0.3): { p: Pt; ang: number; grosor: number } | null {
     let mejor: { p: Pt; ang: number; grosor: number } | null = null;
-    let md = Math.max(this.tol(25), 0.3);
+    let md = Math.max(this.tol(25), alcance);
     for (const el of this.datos.elementos) {
       if (el.tipo !== 'muro') continue;
       const l = dist(el.a, el.b);
@@ -1297,7 +1310,7 @@ export class Editor {
     const tipo = herr === 'ventana' ? 'ventana' : 'puerta';
     const vaiven = herr === 'puerta2';
     const hojas: 1 | 2 = vaiven && this.estilo.dobleHoja ? 2 : 1;
-    const ancho = tipo === 'ventana' ? 1.2 : hojas === 2 ? 1.4 : 0.9;
+    const ancho = tipo === 'ventana' ? 1.2 : hojas === 2 ? 1.4 : herr === 'puerta' && this.estilo.elevador ? 1.0 : 0.9;
     const m = this.colocarEnMuro(p, ancho);
     return {
       id: nuevoId(),
@@ -1309,6 +1322,7 @@ export class Editor {
       invertir: this.aberturaInvertir,
       espejo: false,
       ...(vaiven ? { vaiven, hojas } : {}),
+      ...(herr === 'puerta' && this.estilo.elevador ? { elevador: true } : {}),
       color: '#111827',
     };
   }
@@ -1318,12 +1332,16 @@ export class Editor {
    * con el fondo contra el muro. Devuelve false si no hay muro cerca.
    */
   private pegarAMuro(m: Mueble, p: Pt): boolean {
-    const w = this.colocarEnMuro(p, m.ancho);
+    // Un empotrado se busca más lejos: basta con apuntar al cuarto frente al muro
+    const w = this.colocarEnMuro(p, m.ancho, EMPOTRADOS.has(m.clave) ? Math.max(0.3, m.alto) : 0.3);
     if (!w) return false;
     const nx = -Math.sin(w.ang);
     const ny = Math.cos(w.ang);
     const lado = (p.x - w.p.x) * nx + (p.y - w.p.y) * ny >= 0 ? 1 : -1;
-    const d = (w.grosor / 2 + m.alto / 2) * lado;
+    // Los empotrados (autoclave) atraviesan el muro: solo su frente sobresale de la cara del muro
+    const empotrado = EMPOTRADOS.has(m.clave);
+    const d = (empotrado ? w.grosor / 2 + 0.02 - m.alto / 2 : w.grosor / 2 + m.alto / 2) * lado;
+    if (empotrado) m.empotre = w.grosor;
     m.p = { x: w.p.x + nx * d, y: w.p.y + ny * d };
     m.ang = normalizarAng(lado > 0 ? w.ang : w.ang + Math.PI);
     return true;
@@ -1948,7 +1966,7 @@ export class Editor {
       }
       case 'mueble': {
         const m = this.nuevoMueble(p);
-        if (DE_MURO.has(m.clave) && !this.pegarAMuro(m, p)) return this.aviso('La rejilla solo se coloca sobre un muro: haz clic junto a uno.');
+        if (DE_MURO.has(m.clave) && !this.pegarAMuro(m, p)) return this.aviso(`${itemPorClave(m.clave)?.nombre ?? 'Este elemento'} solo se coloca sobre un muro: haz clic junto a uno, del lado donde va el frente.`);
         this.agregar(m);
         return;
       }
@@ -2646,12 +2664,54 @@ export class Editor {
     this.o.alCancelar?.();
   }
 
-  private descargar(tipo: 'json' | 'png') {
+  /** Menú de "Descargar PNG": imagen ajustada o a tamaño real, con los píxeles por metro del zoom actual. */
+  private menuPNG(ancla: HTMLElement) {
+    const previo = this.raiz.querySelector('.crq-menu');
+    if (previo) return previo.remove();
+    const t = tamanoImagen(this.datos, this.vista.escala);
+    const menu = h('div', { className: 'crq-menu', role: 'menu' });
+    const opcion = (titulo: string, detalle: string, fn: () => void) => {
+      const b = h('button', { type: 'button', role: 'menuitem' }, [h('span', { textContent: titulo }), h('small', { textContent: detalle })]);
+      b.addEventListener('click', () => {
+        cerrar();
+        fn();
+      });
+      menu.append(b);
+    };
+    opcion('Ajustada al dibujo', 'Hasta 2000 px por lado', () => this.descargar('png'));
+    opcion(
+      'Tamaño real al zoom actual',
+      `${t.ancho.toLocaleString('es-MX')} × ${t.alto.toLocaleString('es-MX')} px · ${Math.round(this.vista.escala)} px por metro${t.reducida ? ' (reducida al máximo posible)' : ''}`,
+      () => this.descargar('png', this.vista.escala),
+    );
+    const r = ancla.getBoundingClientRect();
+    const base = this.raiz.getBoundingClientRect();
+    menu.style.top = `${r.bottom - base.top + 6}px`;
+    menu.style.right = `${base.right - r.right}px`;
+    this.raiz.append(menu);
+    const fuera = (e: PointerEvent) => {
+      if (!menu.contains(e.target as Node) && e.target !== ancla && !ancla.contains(e.target as Node)) cerrar();
+    };
+    const tecla = (e: KeyboardEvent) => e.key === 'Escape' && cerrar();
+    const cerrar = () => {
+      menu.remove();
+      document.removeEventListener('pointerdown', fuera, true);
+      document.removeEventListener('keydown', tecla, true);
+    };
+    document.addEventListener('pointerdown', fuera, true);
+    document.addEventListener('keydown', tecla, true);
+  }
+
+  private async descargar(tipo: 'json' | 'png', escala?: number) {
     const a = document.createElement('a');
     const fecha = new Date().toISOString().slice(0, 10);
     if (tipo === 'png') {
-      a.href = this.imagen().png;
-      a.download = this.isometrico ? `croquis-isometrico-${fecha}.png` : `croquis-${fecha}.png`;
+      this.terminarPoli();
+      const img = exportarPNG(this.datos, { ...this.o.exportar, ...(escala ? { escala } : {}) });
+      // Las imágenes grandes se descargan como archivo (un data URL muy largo puede fallar)
+      a.href = URL.createObjectURL(await (await fetch(img.png)).blob());
+      const sufijo = escala ? `-${img.ancho}x${img.alto}` : '';
+      a.download = (this.isometrico ? `croquis-isometrico-${fecha}` : `croquis-${fecha}`) + sufijo + '.png';
     } else {
       a.href = URL.createObjectURL(new Blob([JSON.stringify(datosLimpios(this.datos))], { type: 'application/json' }));
       a.download = `croquis-${fecha}.croquis.json`;

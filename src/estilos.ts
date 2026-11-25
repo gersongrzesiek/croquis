@@ -69,6 +69,11 @@ export const CSS = `
 .crq-tip kbd{font:500 11px/1 var(--crq-mono);min-width:18px;height:18px;padding:0 4px;display:inline-flex;align-items:center;justify-content:center;
   border-radius:4px;background:color-mix(in srgb,var(--crq-panel) 18%,transparent);color:var(--crq-panel)}
 .crq-lienzo{flex:1;position:relative;min-width:0;overflow:hidden}
+.crq-raiz{position:relative}
+.crq-menu{position:absolute;z-index:20;min-width:260px;max-width:340px;padding:6px;background:var(--crq-panel);border:1px solid var(--crq-borde-fuerte);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.14);display:flex;flex-direction:column;gap:2px}
+.crq-raiz .crq-menu button{display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;text-align:left;border:0;background:transparent;padding:8px 10px;border-radius:7px;height:auto}
+.crq-raiz .crq-menu button:hover{background:var(--crq-hover)}
+.crq-menu small{color:var(--crq-sutil);font-size:12px;font-family:var(--crq-mono)}
 .crq-lienzo.crq-soltar::after{content:'Suelta la imagen para agregarla';position:absolute;inset:8px;display:flex;align-items:center;justify-content:center;border:2px dashed var(--crq-acento,#1f5fbf);border-radius:8px;background:rgba(31,95,191,.06);color:var(--crq-acento,#1f5fbf);font-weight:600;pointer-events:none}
 .crq-lienzo canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none;display:block}
 

@@ -257,6 +257,32 @@ function dibujarAbertura(ctx: CanvasRenderingContext2D, el: Abertura, fondo: str
     ctx.moveTo(-w / 2, g / 6);
     ctx.lineTo(w / 2, g / 6);
     ctx.stroke();
+  } else if (el.elevador) {
+    // Puerta de elevador: dos hojas corredizas (cerradas) que abren desde el centro, sin giro
+    const s = el.invertir ? 1 : -1;
+    const t = Math.min(0.05, g * 0.35);
+    const y = s * (g / 2 - t / 2);
+    ctx.fillStyle = '#d1d5db';
+    ctx.lineWidth = 0.015;
+    for (const x of [-w / 2, 0]) {
+      ctx.fillRect(x, y - t / 2, w / 2, t);
+      ctx.strokeRect(x, y - t / 2, w / 2, t);
+    }
+    // Flechas de apertura hacia los lados, del lado del vestíbulo
+    const ya = s * (g / 2 + 0.12);
+    const f = Math.min(0.08, w * 0.08);
+    ctx.lineWidth = 0.015;
+    ctx.beginPath();
+    for (const d of [-1, 1]) {
+      const x0 = d * w * 0.08;
+      const x1 = d * w * 0.4;
+      ctx.moveTo(x0, ya);
+      ctx.lineTo(x1, ya);
+      ctx.moveTo(x1 - d * f, ya - f * 0.6);
+      ctx.lineTo(x1, ya);
+      ctx.lineTo(x1 - d * f, ya + f * 0.6);
+    }
+    ctx.stroke();
   } else {
     const s = el.invertir ? 1 : -1;
     // Bisagras: [x de la bisagra, largo de la hoja]

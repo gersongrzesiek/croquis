@@ -29,6 +29,10 @@ export const MAT = {
   piel: { color: '#c99a74', luzLados: [0.1, 0.3], luzTapa: 0.4 },
   bota: { color: '#60a5fa', luzLados: [0.15, 0.4], luzTapa: 0.5 },
   maniqui: { color: '#8f949c', luzLados: [0.02, 0.5], luzTapa: 0.62 },
+  crema: { color: '#d9d3c3', luzLados: [0.35, 0.6], luzTapa: 0.8 },
+  marino: { color: '#1e2b5e', luzLados: [0.02, 0.14], luzTapa: 0.18 },
+  azul: { color: '#2f6db5', luzLados: [0.15, 0.4], luzTapa: 0.5 },
+  inox: { color: '#9aa3ad', luzLados: [0.3, 0.55], luzTapa: 0.7 },
 } satisfies Record<string, Material>;
 
 export interface Pieza {
@@ -69,7 +73,7 @@ export function focoRayos(el: Mueble): { p: Pt; z: number } {
 
 /** Piezas que forman el mueble. Una lista vacía significa que va plano en el piso (señales, coladeras…). */
 /** Muebles largos cuyo modelo va a lo largo (cabecera atrás, pies adelante). */
-export const LARGOS = new Set(['cama-hosp', 'camilla', 'mesa-exploracion', 'mesa-quirurgica', 'mesa-rx']);
+export const LARGOS = new Set(['cama-hosp', 'camilla', 'camilla-traslado', 'mesa-exploracion', 'mesa-quirurgica', 'mesa-rx']);
 
 export function modeloMueble(el: Mueble): Pieza[] {
   // Si se dibujó más ancho que largo, el modelo se gira para que siga el lado largo
@@ -160,6 +164,38 @@ export function modeloMueble(el: Mueble): Pieza[] {
       caja(0, 0.22, 0.03, 0.68, zBase + 0.27, zBase + 0.5, MAT.metal);
       caja(0.97, 0.22, 1, 0.68, zBase + 0.27, zBase + 0.5, MAT.metal);
     }
+  };
+  /**
+   * Bloque inclinado a lo largo (respaldo levantado): va de la bisagra `yB` hacia `yE` subiendo con el ángulo `ang`
+   * (en grados). `z` es la altura de su cara de abajo en la bisagra. Medidas en metros locales.
+   */
+  const inclinado = (x0: number, x1: number, yB: number, yE: number, z: number, ang: number, grueso: number, mat: Material) => {
+    const sube = Math.abs(yB - yE) * Math.tan((ang * Math.PI) / 180);
+    const v: V3[] = [
+      [x0, yB, z],
+      [x1, yB, z],
+      [x1, yE, z + sube],
+      [x0, yE, z + sube],
+    ];
+    const t: V3[] = v.map((q) => [q[0], q[1], q[2] + grueso]);
+    const c: V3 = por([...v, ...t].reduce((a, q) => suma(a, q), [0, 0, 0] as V3), 1 / 8);
+    const lados: V3[][] = [
+      [v[0], v[1], v[2], v[3]],
+      [t[0], t[1], t[2], t[3]],
+      [v[0], v[1], t[1], t[0]],
+      [v[1], v[2], t[2], t[1]],
+      [v[2], v[3], t[3], t[2]],
+      [v[3], v[0], t[0], t[3]],
+    ];
+    const o = mundo(0, 0);
+    const malla: CaraMalla[] = lados.map((q) => {
+      let n = unit(cruz(resta(q[1], q[0]), resta(q[2], q[0])));
+      const centro = por(q.reduce((a, p) => suma(a, p), [0, 0, 0] as V3), 1 / 4);
+      if (n[0] * (centro[0] - c[0]) + n[1] * (centro[1] - c[1]) + n[2] * (centro[2] - c[2]) < 0) n = por(n, -1);
+      const w = mundo(n[0], n[1]);
+      return { pts: q.map((p) => ({ p: mundo(p[0], p[1]), z: p[2] })), n: { x: w.x - o.x, y: w.y - o.y, z: n[2] } };
+    });
+    piezas.push({ pts: [mundo(x0, yB), mundo(x1, yB), mundo(x1, yE), mundo(x0, yE)], z0: z, z1: z + sube + grueso, mat, malla });
   };
   /** Tarja o lavabo sobre patas o mueble: cubierta con el símbolo y una llave por tina. */
   const tarja = (tinas: number, conMueble: boolean) => {
@@ -300,11 +336,98 @@ export function modeloMueble(el: Mueble): Pieza[] {
     case 'cama-hosp':
       cama(0.35, MAT.tapiz, 0.75, true);
       break;
-    case 'camilla':
-      ruedas();
-      caja(0.06, 0.04, 0.94, 0.96, 0.08, 0.55, MAT.metal);
-      cama(0.55, MAT.tapiz, 0, true);
+    case 'camilla': {
+      // Carro camilla de urgencias: base cerrada con ruedas grandes, dos columnas, chasis con defensas
+      // azules, colchón azul marino con el respaldo levantado, barandales abatibles y portasueros.
+      const r = 0.075;
+      for (const sx of [-1, 1]) for (const sy of [-1, 1]) cil(sx * (W / 2 - 0.09), sy * (D / 2 - 0.12), r * 0.45, r, 0, r * 2, MAT.negro, 10);
+      caja(0.1, 0.06, 0.9, 0.94, 0.14, 0.3, MAT.crema);
+      caja(0.14, 0.1, 0.86, 0.9, 0.3, 0.33, MAT.crema);
+      // Pedales a los lados de la base
+      for (const fy of [0.3, 0.55]) {
+        caja(0.02, fy, 0.1, fy + 0.06, 0.18, 0.21, MAT.negro);
+        caja(0.9, fy, 0.98, fy + 0.06, 0.18, 0.21, MAT.negro);
+      }
+      // Columnas (fuelles) y chasis
+      for (const fy of [0.3, 0.7]) cilF(0.5, fy, m * 0.13, m * 0.13, 0.33, 0.6, MAT.crema, 12);
+      caja(0.03, 0.02, 0.97, 0.98, 0.6, 0.68, MAT.crema);
+      caja(-0.01, 0.1, 0.03, 0.9, 0.6, 0.66, MAT.azul);
+      caja(0.97, 0.1, 1.01, 0.9, 0.6, 0.66, MAT.azul);
+      // Colchón: asiento y piernas planos, respaldo levantado hacia la cabecera (y negativa)
+      const zc = 0.68;
+      const yB = -D / 2 + D * 0.4;
+      caja(0.05, 0.4, 0.95, 0.97, zc, zc + 0.13, MAT.marino);
+      inclinado(-W / 2 + W * 0.05, W / 2 - W * 0.05, yB, -D / 2 + D * 0.08, zc, 42, 0.13, MAT.marino);
+      // Barandales: travesaño arriba y postes
+      for (const fx of [0.005, 0.965]) {
+        for (const fy of [0.45, 0.6, 0.75]) caja(fx, fy, fx + 0.03, fy + 0.015, zc, zc + 0.33, MAT.crema);
+        caja(fx, 0.42, fx + 0.03, 0.8, zc + 0.3, zc + 0.35, MAT.crema);
+      }
+      // Portasueros en la esquina de la cabecera
+      cil(W / 2 - 0.05, -D / 2 + 0.04, 0.012, 0.012, zc, 1.85, MAT.oscuro, 8);
+      cajaM(W / 2 - 0.12, -D / 2 + 0.03, W / 2 + 0.02, -D / 2 + 0.05, 1.83, 1.86, MAT.oscuro);
       break;
+    }
+    case 'camilla-traslado': {
+      // Camilla de traslado sencilla: tubo cromado, cuatro rodajas, colchoneta negra con cabecera
+      // levantada, un barandal lateral y portasueros.
+      const r = 0.05;
+      for (const sx of [-1, 1]) for (const sy of [-1, 1]) cil(sx * (W / 2 - 0.05), sy * (D / 2 - 0.12), r * 0.4, r, 0, r * 2, MAT.negro, 10);
+      for (const sx of [-1, 1])
+        for (const sy of [-1, 1]) {
+          cil(sx * (W / 2 - 0.05), sy * (D / 2 - 0.12), 0.012, 0.012, r * 2, r * 2 + 0.03, MAT.metal, 6);
+          cil(sx * (W / 2 - 0.05), sy * (D / 2 - 0.15), 0.018, 0.018, r * 2 + 0.03, 0.72, MAT.metal, 8);
+        }
+      // Largueros bajos y travesaños
+      for (const sx of [-1, 1]) cajaM(sx * (W / 2 - 0.05) - 0.015, -D / 2 + 0.15, sx * (W / 2 - 0.05) + 0.015, D / 2 - 0.15, 0.24, 0.27, MAT.metal);
+      for (const sy of [-1, 1]) cajaM(-W / 2 + 0.05, sy * (D / 2 - 0.15) - 0.015, W / 2 - 0.05, sy * (D / 2 - 0.15) + 0.015, 0.24, 0.27, MAT.metal);
+      // Bastidor blanco y colchoneta
+      caja(0, 0, 1, 1, 0.72, 0.76, MAT.blanco);
+      caja(0.02, 0.3, 0.98, 1, 0.76, 0.82, MAT.negro);
+      inclinado(-W / 2 + W * 0.02, W / 2 - W * 0.02, -D / 2 + D * 0.3, -D / 2 + D * 0.02, 0.76, 22, 0.06, MAT.negro);
+      // Barandal de un lado
+      const xb = -W / 2 + 0.02;
+      for (const fy of [0.35, 0.68]) cilF(0.03, fy, 0.012, 0.012, 0.76, 1.02, MAT.metal, 8);
+      cajaM(xb - 0.012, -D / 2 + D * 0.35, xb + 0.012, -D / 2 + D * 0.68, 1.0, 1.03, MAT.metal);
+      // Portasueros
+      cil(W / 2 - 0.04, -D / 2 + D * 0.32, 0.01, 0.01, 0.76, 1.95, MAT.metal, 8);
+      cajaM(W / 2 - 0.16, -D / 2 + D * 0.32 - 0.01, W / 2 + 0.08, -D / 2 + D * 0.32 + 0.01, 1.92, 1.94, MAT.metal);
+      break;
+    }
+    case 'autoclave-emp': {
+      // Autoclave empotrable: el frente (tapa y tablero) queda en la cara del muro y el cuerpo
+      // atraviesa el muro hacia atrás. `empotre` es el grosor del muro en que está colocada.
+      const H = 1.85;
+      const yf = D / 2;
+      const yp = yf - 0.025; // cara trasera del panel frontal
+      const muro = el.empotre ?? 0;
+      const yc = yf - 0.02 - muro; // donde empieza el cuerpo, detrás del muro
+      // Panel frontal de acero inoxidable
+      cajaM(-W / 2, yp, W / 2, yf, 0.05, H, MAT.inox);
+      // Tapa (puerta de la cámara): marco, cristal oscuro arriba y hoja de acero abajo
+      const xp = W * 0.36;
+      cajaM(-xp, yf, xp, yf + 0.012, 0.55, 1.42, MAT.metal);
+      cajaM(-xp + 0.03, yf + 0.012, xp - 0.03, yf + 0.02, 1.1, 1.38, MAT.negro);
+      cajaM(-xp + 0.03, yf + 0.012, xp - 0.03, yf + 0.02, 0.6, 1.08, MAT.inox);
+      // Tablero, paro de emergencia e impresora
+      cajaM(-W * 0.3, yf, W * 0.05, yf + 0.01, 1.5, 1.75, MAT.oscuro);
+      cil(-W * 0.12, yf + 0.02, 0.025, 0.012, 1.58, 1.64, MAT.rojo, 10);
+      cajaM(W * 0.18, yf, W * 0.34, yf + 0.015, 1.55, 1.72, MAT.blanco);
+      // Cuerpo detrás del muro: cámara cilíndrica en un bastidor azul
+      if (yc - -D / 2 > 0.05) {
+        const largo = yc - -D / 2;
+        const yC = -D / 2 + largo / 2;
+        cajaM(-W / 2, -D / 2, W / 2, yc, 0, 0.05, MAT.azul);
+        for (const sx of [-1, 1])
+          for (const y of [-D / 2, yc - 0.05]) cajaM(sx * W / 2 - (sx > 0 ? 0.05 : 0), y, sx * W / 2 + (sx < 0 ? 0.05 : 0), y + 0.05, 0.05, H, MAT.azul);
+        for (const sx of [-1, 1]) cajaM(sx * W / 2 - (sx > 0 ? 0.05 : 0), -D / 2, sx * W / 2 + (sx < 0 ? 0.05 : 0), yc, H - 0.05, H, MAT.azul);
+        // Cámara de acero detrás de la tapa, con su chaqueta y tuberías abajo
+        cajaM(-W * 0.38, -D / 2 + 0.08, W * 0.38, yc, 0.5, 1.47, MAT.metal);
+        cajaM(-W * 0.4, yC - 0.03, W * 0.4, yC + 0.03, 0.48, 1.49, MAT.inox);
+        cajaM(-W * 0.3, -D / 2 + 0.06, W * 0.3, yc - 0.06, 0.08, 0.4, MAT.oscuro);
+      }
+      break;
+    }
     case 'mesa-exploracion':
       caja(0.02, 0.02, 0.98, 0.98, 0, 0.6, MAT.blanco);
       caja(0.2, 0.98, 0.8, 1, 0.2, 0.3, MAT.metal);
