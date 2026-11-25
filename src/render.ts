@@ -1,6 +1,6 @@
 import { dibujarSimbolo } from './catalogo';
 import { contorno, posEtiqueta, puntosTrazo } from './elementos';
-import { alturaModelo, focoRayos } from './muebles3d';
+import { alturaModelo, bisagrasTransfer, focoRayos } from './muebles3d';
 import { aMundo, areaPoligono, dist, enPoligono, formatoM, largosAcumulados, puntoEnRecorrido } from './geometria';
 import { imagenLista } from './imagenes';
 import type { Abertura, Area, DatosCroquis, Elemento, Imagen, Mueble, Muro, Patron, Pt, Trazo } from './modelo';
@@ -470,7 +470,7 @@ export function dibujarElemento(ctx: CanvasRenderingContext2D, el: Elemento, d: 
       ctx.translate(el.p.x, el.p.y);
       ctx.rotate(el.ang);
       dibujarSimbolo(ctx, el.clave, el.ancho, el.alto, el.color, 0.02);
-      if (el.puertaTransfer && (el.clave === 'transfer' || el.clave === 'transfer-barrera')) puertaVaivenTransfer(ctx, el.ancho, el.color);
+      if (el.puertaTransfer && (el.clave === 'transfer' || el.clave === 'transfer-barrera')) puertaVaivenTransfer(ctx, bisagrasTransfer(el, d.elementos), el.color);
       if (el.haz && tieneHaz(el.clave)) {
         // Haz de rayos X visto desde arriba: abanico que sale del frente del tubo
         const s = (el.hazAmplitud ?? 0.5) / 2;
@@ -710,11 +710,11 @@ function dibujarCuadricula(ctx: CanvasRenderingContext2D, v: Vista, ancho: numbe
 }
 
 /** Doble puerta de vaivén sobre el transfer, en planta: hojas abiertas al lado limpio y arcos a ambos lados. */
-function puertaVaivenTransfer(ctx: CanvasRenderingContext2D, w: number, color: string) {
+function puertaVaivenTransfer(ctx: CanvasRenderingContext2D, [xL, xR]: [number, number], color: string) {
   ctx.save();
   ctx.strokeStyle = color;
-  const r = w / 2;
-  for (const hx of [-w / 2, w / 2]) {
+  const r = (xR - xL) / 2;
+  for (const hx of [xL, xR]) {
     ctx.lineWidth = 0.03;
     ctx.beginPath();
     ctx.moveTo(hx, 0);
@@ -724,7 +724,7 @@ function puertaVaivenTransfer(ctx: CanvasRenderingContext2D, w: number, color: s
     ctx.setLineDash([0.05, 0.035]);
     ctx.beginPath();
     // Arco de cada lado: de la hoja cerrada (al centro) a la hoja abierta
-    if (hx < 0) {
+    if (hx === xL) {
       ctx.arc(hx, 0, r, -Math.PI / 2, Math.PI / 2);
     } else {
       ctx.arc(hx, 0, r, Math.PI / 2, (3 * Math.PI) / 2);

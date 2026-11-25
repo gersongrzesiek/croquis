@@ -4,7 +4,7 @@
  * Es solo una vista: se calcula a partir de los mismos datos del plano.
  */
 import { dibujarSimbolo } from './catalogo';
-import { alturaModelo, fijarAlturaMuros, fijarDetalle, focoRayos, modeloMueble, type CaraMalla, type Material } from './muebles3d';
+import { fijarElementos, alturaModelo, fijarAlturaMuros, fijarDetalle, focoRayos, modeloMueble, type CaraMalla, type Material } from './muebles3d';
 import { cajaDeTodos, contorno, posEtiqueta, type Caja } from './elementos';
 import { aMundo, areaPoligono, dist, enPoligono } from './geometria';
 import type { Abertura, DatosCroquis, Elemento, Mueble, Muro, Norte, Pt } from './modelo';
@@ -900,6 +900,7 @@ export function dibujarIsometrico(ctx: CanvasRenderingContext2D, d: DatosCroquis
   fijarDetalle(o.giro !== undefined || o.elevacion !== undefined);
   const g = iso.giro;
   const todos = ordenar(d.elementos);
+  fijarElementos(d.elementos);
   const muros = todos.filter((e): e is Muro => e.tipo === 'muro');
   const aberturas = todos.filter((e): e is Abertura => e.tipo === 'puerta' || e.tipo === 'ventana');
   const enMuro = new Set(

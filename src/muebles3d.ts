@@ -5,8 +5,8 @@
  * Convención del catálogo: en coordenadas locales del mueble, el lado de y negativa es la parte
  * de atrás (respaldo de la silla, tanque del WC, cabecera de la cama). Medidas en metros.
  */
-import { aMundo } from './geometria';
-import type { Mueble, Pt } from './modelo';
+import { aMundo, enPoligono } from './geometria';
+import type { Elemento, Mueble, Pt } from './modelo';
 
 export interface Material {
   color: string;
@@ -203,20 +203,22 @@ export function modeloMueble(el: Mueble): Pieza[] {
    * con la persona cruzando quedan abiertas hacia el lado limpio, pegadas a los marcos.
    */
   const mediaPuerta = (abierta: boolean) => {
+    const [xL, xR] = bisagrasTransfer(el, elementosVista);
+    const xc = (xL + xR) / 2;
     const z0 = 0.52;
     const z1 = Math.max(z0 + 0.3, Math.min(2.1, alturaMuros));
     const t = 0.02;
-    const L = W / 2 - 0.01;
+    const L = (xR - xL) / 2 - 0.01;
     const zv0 = z0 + (z1 - z0) * 0.45;
     const zv1 = z1 - 0.12;
     for (const sx of [-1, 1]) {
       if (abierta) {
-        const x = sx * (W / 2 - t);
+        const x = sx < 0 ? xL + t : xR - t;
         cajaM(Math.min(x, x + sx * t), 0, Math.max(x, x + sx * t), L, z0, z1, MAT.blanco);
         cajaM(Math.min(x, x - sx * 0.004), 0.08, Math.max(x, x - sx * 0.004), L - 0.08, zv0, zv1, MAT.cristal);
       } else {
-        const a = sx < 0 ? -W / 2 : 0.005;
-        const b = sx < 0 ? -0.005 : W / 2;
+        const a = sx < 0 ? xL : xc + 0.005;
+        const b = sx < 0 ? xc - 0.005 : xR;
         cajaM(a, -t / 2, b, t / 2, z0, z1, MAT.blanco);
         // Mirilla de cristal en cada hoja
         cajaM(a + 0.08, t / 2, b - 0.08, t / 2 + 0.004, zv0, zv1, MAT.cristal);
@@ -879,6 +881,63 @@ function mallaTransfer(W: number, D: number, mundo: (x: number, y: number) => Pt
 }
 
 const cacheMallas = new Map<string, CaraMalla[]>();
+let elementosVista: Elemento[] = [];
+/** Elementos del croquis que se está dibujando (para ajustar las puertas del transfer a los muros). */
+export function fijarElementos(els: Elemento[]) {
+  elementosVista = els;
+}
+
+/**
+ * Bisagras de la doble puerta del transfer, en x local (izquierda negativa, derecha positiva):
+ * en los bordes del vano de la puerta donde está, o en el muro más cercano a cada lado a lo largo de la barrera.
+ * Si no hay nada a menos de 1.5 m, quedan en los extremos de la barrera.
+ */
+export function bisagrasTransfer(el: Mueble, els: Elemento[]): [number, number] {
+  const u = { x: Math.cos(el.ang), y: Math.sin(el.ang) };
+  const n = { x: -u.y, y: u.x };
+  // 1. Dentro del vano de una puerta paralela: las bisagras van en sus jambas
+  for (const ab of els) {
+    if (ab.tipo !== 'puerta' || Math.abs(Math.sin(ab.ang - el.ang)) > 0.1) continue;
+    const d = { x: ab.p.x - el.p.x, y: ab.p.y - el.p.y };
+    const s = d.x * u.x + d.y * u.y;
+    if (Math.abs(d.x * n.x + d.y * n.y) > ab.grosor / 2 + el.alto / 2 || Math.abs(s) > ab.ancho / 2) continue;
+    return [s - ab.ancho / 2, s + ab.ancho / 2];
+  }
+  // 2. Muro más cercano a cada lado, con un rayo desde el centro de la barrera
+  const MAX = 1.5;
+  const res: [number, number] = [-el.ancho / 2, el.ancho / 2];
+  for (const lado of [-1, 1]) {
+    const dir = { x: u.x * lado, y: u.y * lado };
+    let mejor = MAX;
+    for (const m of els) {
+      if (m.tipo !== 'muro') continue;
+      const L = Math.hypot(m.b.x - m.a.x, m.b.y - m.a.y);
+      if (L < 1e-6) continue;
+      const mu = { x: (m.b.x - m.a.x) / L, y: (m.b.y - m.a.y) / L };
+      const g = m.grosor / 2;
+      const r = [
+        { x: m.a.x - mu.y * g, y: m.a.y + mu.x * g },
+        { x: m.b.x - mu.y * g, y: m.b.y + mu.x * g },
+        { x: m.b.x + mu.y * g, y: m.b.y - mu.x * g },
+        { x: m.a.x + mu.y * g, y: m.a.y - mu.x * g },
+      ];
+      if (enPoligono(el.p, r)) continue;
+      for (let i = 0; i < 4; i++) {
+        const a = r[i];
+        const b = r[(i + 1) % 4];
+        const e = { x: b.x - a.x, y: b.y - a.y };
+        const den = dir.x * e.y - dir.y * e.x;
+        if (Math.abs(den) < 1e-9) continue;
+        const w = { x: a.x - el.p.x, y: a.y - el.p.y };
+        const t = (w.x * e.y - w.y * e.x) / den;
+        const k = (w.x * dir.y - w.y * dir.x) / den;
+        if (t > 0.1 && k >= 0 && k <= 1 && t < mejor) mejor = t;
+      }
+    }
+    if (mejor < MAX) res[lado < 0 ? 0 : 1] = lado * mejor;
+  }
+  return res;
+}
 let alturaMuros = 2.5;
 /** Altura de los muros de la vista (para las rejillas, que van referidas al muro). */
 export function fijarAlturaMuros(h: number) {
