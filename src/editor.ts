@@ -842,6 +842,14 @@ export class Editor {
       case 'mueble':
         p.append(this.campoTexto('Etiqueta', el.etiqueta, (v) => (el.etiqueta = v)));
         p.append(this.campoCheck('Ajustar texto al mueble', !!el.ajustarEtq, (v) => (el.ajustarEtq = v)));
+        if (el.clave === 'rejilla-sup' || el.clave === 'rejilla-inf') {
+          p.append(
+            this.campoCheck(el.clave === 'rejilla-sup' ? 'Mostrar el aire que sale (flechas)' : 'Mostrar el aire que se extrae (flechas)', !!el.aire, (v) => {
+              if (v) el.aire = true;
+              else delete el.aire;
+            }),
+          );
+        }
         if (el.clave === 'transfer' || el.clave === 'transfer-barrera') {
           p.append(
             this.campoCheck('Doble puerta de vaivén encima (media puerta)', !!el.puertaTransfer, (v) => {

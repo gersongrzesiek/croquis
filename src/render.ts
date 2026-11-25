@@ -470,6 +470,7 @@ export function dibujarElemento(ctx: CanvasRenderingContext2D, el: Elemento, d: 
       ctx.translate(el.p.x, el.p.y);
       ctx.rotate(el.ang);
       dibujarSimbolo(ctx, el.clave, el.ancho, el.alto, el.color, 0.02);
+      if (el.aire && (el.clave === 'rejilla-sup' || el.clave === 'rejilla-inf')) flechasAire(ctx, el.ancho, el.alto, el.clave === 'rejilla-sup');
       if (el.puertaTransfer && (el.clave === 'transfer' || el.clave === 'transfer-barrera')) puertaVaivenTransfer(ctx, bisagrasTransfer(el, d.elementos), el.color);
       if (el.haz && tieneHaz(el.clave)) {
         // Haz de rayos X visto desde arriba: abanico que sale del frente del tubo
@@ -707,6 +708,33 @@ function dibujarCuadricula(ctx: CanvasRenderingContext2D, v: Vista, ancho: numbe
     }
     ctx.stroke();
   }
+}
+
+/** Flechas del aire frente a una rejilla, en planta: salen de la superior (azul) y entran a la inferior (rojo). */
+function flechasAire(ctx: CanvasRenderingContext2D, w: number, h: number, sale: boolean) {
+  ctx.save();
+  const color = sale ? '#0ea5e9' : '#ef4444';
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = 0.025;
+  const y0 = h / 2 + 0.06;
+  const y1 = y0 + 0.45;
+  const xs = w > 0.45 ? [-w / 3, 0, w / 3] : [0];
+  for (const x of xs) {
+    const [a, b] = sale ? [y0, y1] : [y1, y0];
+    const s = Math.sign(b - a);
+    ctx.beginPath();
+    ctx.moveTo(x, a);
+    ctx.lineTo(x, b - s * 0.1);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x, b);
+    ctx.lineTo(x - 0.06, b - s * 0.12);
+    ctx.lineTo(x + 0.06, b - s * 0.12);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
 }
 
 /** Doble puerta de vaivén sobre el transfer, en planta: hojas abiertas al lado limpio y arcos a ambos lados. */

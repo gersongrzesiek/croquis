@@ -27,6 +27,8 @@ export const MAT = {
   tapiz: { color: '#5b8fd6', luzLados: [0.3, 0.5], luzTapa: 0.6 },
   cristal: { color: '#7fb4e0', luzLados: [0.5, 0.65], luzTapa: 0.45 },
   piel: { color: '#c99a74', luzLados: [0.1, 0.3], luzTapa: 0.4 },
+  aireSale: { color: '#0ea5e9', luzLados: [0.1, 0.3], luzTapa: 0.3 },
+  aireEntra: { color: '#ef4444', luzLados: [0.1, 0.3], luzTapa: 0.3 },
   bota: { color: '#60a5fa', luzLados: [0.15, 0.4], luzTapa: 0.5 },
   maniqui: { color: '#8f949c', luzLados: [0.02, 0.5], luzTapa: 0.62 },
   crema: { color: '#d9d3c3', luzLados: [0.35, 0.6], luzTapa: 0.8 },
@@ -310,21 +312,25 @@ export function modeloMueble(el: Mueble): Pieza[] {
     case 'tarja':
       tarja(1, true);
       break;
+    case 'mesa-tarja':
     case 'mesa-tarja-doble': {
-      // Mesa de acero inoxidable con dos tinas hundidas, escurridero, respaldo, entrepaño y patas redondas
-      const zt = 0.9;
+      // Mesa de acero inoxidable con tinas hundidas a la izquierda, escurridero, respaldo, entrepaño y patas redondas
+      const doble = el.clave === 'mesa-tarja-doble';
+      const zt = doble ? 0.9 : 0.95;
       const g = 0.03;
-      const tinasX: [number, number][] = [
-        [0.08, 0.36],
-        [0.39, 0.67],
-      ];
-      const [y0, y1] = [0.15, 0.88];
+      const tinasX: [number, number][] = doble
+        ? [
+            [0.08, 0.36],
+            [0.39, 0.67],
+          ]
+        : [[0.06, 0.42]];
+      const [y0, y1] = doble ? [0.15, 0.88] : [0.14, 0.82];
       // Cubierta alrededor de las tinas (en tiras, para dejar los huecos)
       caja(0, 0, 1, y0, zt - g, zt, MAT.inox);
       caja(0, y1, 1, 1, zt - g, zt, MAT.inox);
       caja(0, y0, tinasX[0][0], y1, zt - g, zt, MAT.inox);
-      caja(tinasX[0][1], y0, tinasX[1][0], y1, zt - g, zt, MAT.inox);
-      caja(tinasX[1][1], y0, 1, y1, zt - g, zt, MAT.inox, true);
+      for (let i = 0; i < tinasX.length - 1; i++) caja(tinasX[i][1], y0, tinasX[i + 1][0], y1, zt - g, zt, MAT.inox);
+      caja(tinasX[tinasX.length - 1][1], y0, 1, y1, zt - g, zt, MAT.inox, true);
       // Faldón al frente y respaldo atrás
       caja(0, 0.975, 1, 1, zt - 0.07, zt - g, MAT.inox);
       caja(0, 0, 1, 0.03, zt, zt + 0.15, MAT.inox);
@@ -340,7 +346,7 @@ export function modeloMueble(el: Mueble): Pieza[] {
       cajaM(-W / 2 + ins, -D / 2 + ins - 0.012, W / 2 - ins, -D / 2 + ins + 0.012, 0.5, 0.525, MAT.metal);
       caja(0.02, 0.05, 0.98, 0.95, 0.15, 0.18, MAT.inox);
       // Manguera de desagüe de la primera tina
-      cil(-W / 2 + W * 0.22, -D / 2 + D * 0.52, 0.02, 0.02, 0.18, zt - 0.32, MAT.metal, 8);
+      cil(-W / 2 + W * ((tinasX[0][0] + tinasX[0][1]) / 2), -D / 2 + D * ((y0 + y1) / 2), 0.02, 0.02, 0.18, zt - 0.32, MAT.metal, 8);
       break;
     }
     case 'tarja-doble':
@@ -586,6 +592,35 @@ export function modeloMueble(el: Mueble): Pieza[] {
       for (let i = 0; i < n; i++) {
         const zs = z0 + f + paso * i + paso * 0.3;
         cajaM(-W / 2 + f, yb + D * 0.3, W / 2 - f, yf - D * 0.15, zs, zs + paso * 0.45, MAT.blanco);
+      }
+      if (el.aire) {
+        // Flujo de aire: de la superior sale hacia el cuarto y baja; por la inferior entra hacia la rejilla
+        const sale = el.clave === 'rejilla-sup';
+        const zc = (z0 + z1) / 2;
+        const largo = 0.55;
+        const baja = sale ? 0.22 : 0;
+        const caras: CaraMalla[] = [];
+        const xs = W > 0.45 ? [-W / 3, 0, W / 3] : [0];
+        for (const x of xs) {
+          // Punta y cola a lo largo del flujo (y local hacia el cuarto, z hacia arriba)
+          const ini: V3 = sale ? [x, yf + 0.03, zc] : [x, yf + 0.03 + largo, zc + 0.05];
+          const fin: V3 = sale ? [x, yf + 0.03 + largo, zc - baja] : [x, yf + 0.03, zc];
+          const d = unit(resta(fin, ini));
+          const per: V3 = unit([0, -d[2], d[1]]);
+          const P = (s: number, h: number): V3 => suma(suma(ini, por(d, s)), por(per, h));
+          const L = Math.hypot(fin[1] - ini[1], fin[2] - ini[2]);
+          const cuerpo = L - 0.13;
+          const forma: V3[] = [P(0, -0.018), P(cuerpo, -0.018), P(cuerpo, -0.06), P(L, 0), P(cuerpo, 0.06), P(cuerpo, 0.018), P(0, 0.018)];
+          caras.push({ pts: forma.map((q) => ({ p: mundo(q[0], q[1]), z: q[2] })), mat: sale ? MAT.aireSale : MAT.aireEntra });
+        }
+        const zs = [zc - baja - 0.07, zc + 0.12];
+        piezas.push({
+          pts: [mundo(-W / 2, yf), mundo(W / 2, yf), mundo(W / 2, yf + largo + 0.05), mundo(-W / 2, yf + largo + 0.05)],
+          z0: zs[0],
+          z1: zs[1],
+          mat: sale ? MAT.aireSale : MAT.aireEntra,
+          malla: caras,
+        });
       }
       break;
     }

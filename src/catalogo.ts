@@ -54,6 +54,7 @@ export const CATALOGO: ItemCatalogo[] = [
   it('carro-curacion', 'Carro de curación', 0.7, 0.45),
   it('portasueros', 'Portavenoclisis', 0.5, 0.5),
   it('lavabo-cirujano', 'Lavabo de cirujanos', 1.5, 0.6),
+  it('mesa-tarja', 'Mesa alta con tarja', 1.2, 0.7),
   it('asiento-giratorio', 'Asiento giratorio', 0.45, 0.45),
   it('banqueta', 'Banqueta de altura', 0.5, 0.35),
   it('bote-rpbi', 'Bote RPBI', 0.4, 0.4),
@@ -115,7 +116,7 @@ export const CATEGORIAS: Categoria[] = [
     id: 'hospitalario',
     nombre: 'Hospitalario',
     norma: 'NOM-016-SSA3-2012',
-    claves: ['cama-hosp', 'camilla', 'camilla-traslado', 'mesa-exploracion', 'mesa-quirurgica', 'transfer', 'transfer-barrera', 'lampara-quir', 'anestesia', 'mesa-mayo', 'mesa-rinon', 'mesa-pasteur', 'carro-rojo', 'carro-curacion', 'portasueros', 'lavabo-cirujano', 'lavabo', 'asiento-giratorio', 'banqueta', 'negatoscopio', 'bote-rpbi', 'bote', 'autoclave-emp', 'rejilla-sup', 'rejilla-inf'],
+    claves: ['cama-hosp', 'camilla', 'camilla-traslado', 'mesa-exploracion', 'mesa-quirurgica', 'transfer', 'transfer-barrera', 'lampara-quir', 'anestesia', 'mesa-mayo', 'mesa-rinon', 'mesa-pasteur', 'carro-rojo', 'carro-curacion', 'portasueros', 'lavabo-cirujano', 'mesa-tarja', 'lavabo', 'asiento-giratorio', 'banqueta', 'negatoscopio', 'bote-rpbi', 'bote', 'autoclave-emp', 'rejilla-sup', 'rejilla-inf'],
   },
   {
     id: 'plagas',
@@ -687,17 +688,23 @@ export function dibujarSimbolo(ctx: CanvasRenderingContext2D, clave: string, w: 
       caja();
       tinas(2);
       break;
+    case 'mesa-tarja':
     case 'mesa-tarja-doble': {
-      // Mesa de acero con dos tinas a la izquierda, escurridero a la derecha y respaldo atrás
+      // Mesa de acero con tinas a la izquierda, escurridero a la derecha y respaldo atrás
+      const doble = clave === 'mesa-tarja-doble';
       caja();
       lf(0, 0.07, 1, 0.07); // respaldo
-      for (const [a, b] of [[0.08, 0.36], [0.39, 0.67]]) {
-        redondo(a, 0.17, b - a, 0.7, 0.06);
-        circ(X((a + b) / 2), Y(0.52), m * 0.05);
+      const tinasX = doble ? [[0.08, 0.36], [0.39, 0.67]] : [[0.06, 0.42]];
+      const [ty0, ty1] = doble ? [0.17, 0.87] : [0.15, 0.82];
+      for (const [a, b] of tinasX) {
+        redondo(a, ty0, b - a, ty1 - ty0, 0.06);
+        circ(X((a + b) / 2), Y((ty0 + ty1) / 2), m * 0.05);
       }
       // Escurridero con canales
+      const e0 = tinasX[tinasX.length - 1][1] + 0.04;
+      const e1 = 0.97;
       ctx.lineWidth = lw * 0.6;
-      for (let i = 1; i <= 5; i++) lf(0.7 + (i * 0.27) / 6, 0.2, 0.7 + (i * 0.27) / 6, 0.85);
+      for (let i = 1; i <= 5; i++) lf(e0 + (i * (e1 - e0)) / 6, 0.2, e0 + (i * (e1 - e0)) / 6, 0.85);
       ctx.lineWidth = lw;
       break;
     }
