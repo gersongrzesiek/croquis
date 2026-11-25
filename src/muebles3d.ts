@@ -64,6 +64,8 @@ export interface CaraMalla {
   n?: { x: number; y: number; z: number };
   /** Material propio de la cara (si no, el de la pieza). */
   mat?: Material;
+  /** Relleno en degradado sin bordes: transparente en `de` y del color pleno en `a` (flechas de aire). */
+  degradado?: { de: { p: Pt; z: number }; a: { p: Pt; z: number } };
   /** Dibuja la retícula de la malla con un tono más oscuro (aspecto de maniquí). */
   trama?: boolean;
 }
@@ -610,8 +612,10 @@ export function modeloMueble(el: Mueble): Pieza[] {
           const P = (s: number, h: number): V3 => suma(suma(ini, por(d, s)), por(per, h));
           const L = Math.hypot(fin[1] - ini[1], fin[2] - ini[2]);
           const cuerpo = L - 0.13;
-          const forma: V3[] = [P(0, -0.018), P(cuerpo, -0.018), P(cuerpo, -0.06), P(L, 0), P(cuerpo, 0.06), P(cuerpo, 0.018), P(0, 0.018)];
-          caras.push({ pts: forma.map((q) => ({ p: mundo(q[0], q[1]), z: q[2] })), mat: sale ? MAT.aireSale : MAT.aireEntra });
+          // Cola fina que se ensancha hacia la punta
+          const forma: V3[] = [P(0, -0.008), P(cuerpo, -0.022), P(cuerpo, -0.06), P(L, 0), P(cuerpo, 0.06), P(cuerpo, 0.022), P(0, 0.008)];
+          const W3 = (q: V3) => ({ p: mundo(q[0], q[1]), z: q[2] });
+          caras.push({ pts: forma.map(W3), mat: sale ? MAT.aireSale : MAT.aireEntra, degradado: { de: W3(ini), a: W3(fin) } });
         }
         const zs = [zc - baja - 0.07, zc + 0.12];
         piezas.push({

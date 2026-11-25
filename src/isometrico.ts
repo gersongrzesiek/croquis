@@ -448,6 +448,20 @@ function dibujarMalla(ctx: CanvasRenderingContext2D, caras: CaraMalla[], matPiez
     ctx.beginPath();
     s.forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)));
     ctx.closePath();
+    if (c.degradado) {
+      // Degradado de transparente (cola) al color pleno (punta), sin bordes
+      const a = aIso(c.degradado.de.p, c.degradado.de.z, giro);
+      const b = aIso(c.degradado.a.p, c.degradado.a.z, giro);
+      const base = rgb(mat.color) ?? [14, 165, 233];
+      const gr = ctx.createLinearGradient(a.x, a.y, b.x, b.y);
+      gr.addColorStop(0, `rgba(${base.join(',')},0)`);
+      gr.addColorStop(0.55, `rgba(${base.join(',')},0.45)`);
+      gr.addColorStop(0.8, `rgba(${base.join(',')},1)`);
+      gr.addColorStop(1, `rgba(${base.join(',')},1)`);
+      ctx.fillStyle = gr;
+      ctx.fill();
+      continue;
+    }
     ctx.fillStyle = relleno;
     ctx.strokeStyle = relleno;
     ctx.lineWidth = pelo;
