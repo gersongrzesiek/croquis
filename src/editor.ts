@@ -842,6 +842,14 @@ export class Editor {
       case 'mueble':
         p.append(this.campoTexto('Etiqueta', el.etiqueta, (v) => (el.etiqueta = v)));
         p.append(this.campoCheck('Ajustar texto al mueble', !!el.ajustarEtq, (v) => (el.ajustarEtq = v)));
+        if (el.clave === 'transfer' || el.clave === 'transfer-barrera') {
+          p.append(
+            this.campoCheck('Doble puerta de vaivén encima (media puerta)', !!el.puertaTransfer, (v) => {
+              if (v) el.puertaTransfer = true;
+              else delete el.puertaTransfer;
+            }),
+          );
+        }
         p.append(this.campoNum('Ancho (m)', el.ancho, 0.1, 20, 0.05, (v) => (el.ancho = v)));
         p.append(this.campoNum('Fondo (m)', el.alto, 0.1, 20, 0.05, (v) => (el.alto = v)));
         p.append(this.campoNum('Ángulo (°)', Math.round((el.ang * 180) / Math.PI), -360, 360, 15, (v) => (el.ang = (v * Math.PI) / 180)));

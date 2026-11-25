@@ -470,6 +470,7 @@ export function dibujarElemento(ctx: CanvasRenderingContext2D, el: Elemento, d: 
       ctx.translate(el.p.x, el.p.y);
       ctx.rotate(el.ang);
       dibujarSimbolo(ctx, el.clave, el.ancho, el.alto, el.color, 0.02);
+      if (el.puertaTransfer && (el.clave === 'transfer' || el.clave === 'transfer-barrera')) puertaVaivenTransfer(ctx, el.ancho, el.color);
       if (el.haz && tieneHaz(el.clave)) {
         // Haz de rayos X visto desde arriba: abanico que sale del frente del tubo
         const s = (el.hazAmplitud ?? 0.5) / 2;
@@ -706,6 +707,32 @@ function dibujarCuadricula(ctx: CanvasRenderingContext2D, v: Vista, ancho: numbe
     }
     ctx.stroke();
   }
+}
+
+/** Doble puerta de vaivén sobre el transfer, en planta: hojas abiertas al lado limpio y arcos a ambos lados. */
+function puertaVaivenTransfer(ctx: CanvasRenderingContext2D, w: number, color: string) {
+  ctx.save();
+  ctx.strokeStyle = color;
+  const r = w / 2;
+  for (const hx of [-w / 2, w / 2]) {
+    ctx.lineWidth = 0.03;
+    ctx.beginPath();
+    ctx.moveTo(hx, 0);
+    ctx.lineTo(hx, r);
+    ctx.stroke();
+    ctx.lineWidth = 0.012;
+    ctx.setLineDash([0.05, 0.035]);
+    ctx.beginPath();
+    // Arco de cada lado: de la hoja cerrada (al centro) a la hoja abierta
+    if (hx < 0) {
+      ctx.arc(hx, 0, r, -Math.PI / 2, Math.PI / 2);
+    } else {
+      ctx.arc(hx, 0, r, Math.PI / 2, (3 * Math.PI) / 2);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  ctx.restore();
 }
 
 /** Imagen pegada, con su transparencia. Mientras se carga se ve solo su marco. */

@@ -72,6 +72,8 @@ export interface Mueble extends Base {
   hazTransparencia?: number;
   /** Alcance del haz desde el frente del tubo, en metros. Sin valor, llega solo hasta el primer muro o mueble alto. */
   hazDistancia?: number;
+  /** Transfer: doble puerta de vaivén encima de la barrera (media puerta, de la barrera hasta arriba del vano). */
+  puertaTransfer?: boolean;
   /** Mueble empotrado (autoclave): grosor del muro que atraviesa, en metros. */
   empotre?: number;
 }

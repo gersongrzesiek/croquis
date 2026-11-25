@@ -197,6 +197,33 @@ export function modeloMueble(el: Mueble): Pieza[] {
     });
     piezas.push({ pts: [mundo(x0, yB), mundo(x1, yB), mundo(x1, yE), mundo(x0, yE)], z0: z, z1: z + sube + grueso, mat, malla });
   };
+  /**
+   * Doble puerta de vaivén sobre la barrera del transfer: dos hojas desde justo encima de la barrera
+   * hasta la altura de la puerta (2.10 m o el muro, lo que sea menor). Sin persona van cerradas;
+   * con la persona cruzando quedan abiertas hacia el lado limpio, pegadas a los marcos.
+   */
+  const mediaPuerta = (abierta: boolean) => {
+    const z0 = 0.52;
+    const z1 = Math.max(z0 + 0.3, Math.min(2.1, alturaMuros));
+    const t = 0.02;
+    const L = W / 2 - 0.01;
+    const zv0 = z0 + (z1 - z0) * 0.45;
+    const zv1 = z1 - 0.12;
+    for (const sx of [-1, 1]) {
+      if (abierta) {
+        const x = sx * (W / 2 - t);
+        cajaM(Math.min(x, x + sx * t), 0, Math.max(x, x + sx * t), L, z0, z1, MAT.blanco);
+        cajaM(Math.min(x, x - sx * 0.004), 0.08, Math.max(x, x - sx * 0.004), L - 0.08, zv0, zv1, MAT.cristal);
+      } else {
+        const a = sx < 0 ? -W / 2 : 0.005;
+        const b = sx < 0 ? -0.005 : W / 2;
+        cajaM(a, -t / 2, b, t / 2, z0, z1, MAT.blanco);
+        // Mirilla de cristal en cada hoja
+        cajaM(a + 0.08, t / 2, b - 0.08, t / 2 + 0.004, zv0, zv1, MAT.cristal);
+        cajaM(a + 0.08, -t / 2 - 0.004, b - 0.08, -t / 2, zv0, zv1, MAT.cristal);
+      }
+    }
+  };
   /** Tarja o lavabo sobre patas o mueble: cubierta con el símbolo y una llave por tina. */
   const tarja = (tinas: number, conMueble: boolean) => {
     const z = 0.9;
@@ -469,6 +496,7 @@ export function modeloMueble(el: Mueble): Pieza[] {
       caja(0, 0, 1, 0.16, 0.72, 0.9, MAT.tapiz);
       break;
     case 'transfer-barrera':
+      if (el.puertaTransfer) mediaPuerta(false);
       // Solo la barrera fija de acero inoxidable, sin la persona
       cajaM(-W / 2, -D / 2, W / 2, D / 2, 0, 0.47, MAT.metal);
       cajaM(-W / 2 - 0.01, -D / 2 - 0.01, W / 2 + 0.01, D / 2 + 0.01, 0.47, 0.5, MAT.metal);
@@ -477,6 +505,7 @@ export function modeloMueble(el: Mueble): Pieza[] {
       // Barrera fija de acero inoxidable (para sentarse) y un maniquí liso sentado a horcajadas
       // cambiándose las botas: un pie en el piso y el otro levantado del lado limpio, con las manos en la bota.
       // Todo va en una sola malla para que las caras de la persona y de la barrera se ordenen entre sí.
+      if (el.puertaTransfer) mediaPuerta(true);
       const malla = mallaTransfer(W, D, mundo);
       piezas.push({ pts: [mundo(-W / 2, -0.48), mundo(W / 2, -0.48), mundo(W / 2, 0.48), mundo(-W / 2, 0.48)], z0: 0, z1: 1.42, mat: MAT.maniqui, malla });
       break;
