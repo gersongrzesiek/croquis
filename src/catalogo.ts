@@ -39,11 +39,16 @@ export const CATALOGO: ItemCatalogo[] = [
   // Hospitalario (NOM-016-SSA3-2012)
   it('cama-hosp', 'Cama hospitalaria', 1.0, 2.1),
   it('camilla', 'Carro camilla', 0.7, 1.9),
+  it('camilla-traslado', 'Camilla de traslado', 0.6, 1.9),
+  it('autoclave-emp', 'Autoclave empotrable', 0.9, 1.3),
   it('mesa-exploracion', 'Mesa de exploración', 0.7, 1.8),
   it('mesa-quirurgica', 'Mesa quirúrgica', 0.6, 2.0),
+  it('mesa-obstetrica', 'Mesa de atención obstétrica', 0.7, 1.9),
+  it('cama-parto', 'Cama de parto', 0.9, 2.0),
   it('transfer', 'Transfer / cambio de botas', 0.9, 0.4),
   it('transfer-barrera', 'Transfer (solo barrera)', 0.9, 0.4),
   it('lampara-quir', 'Lámpara quirúrgica', 0.9, 0.9),
+  it('anaquel-ceye', 'Anaquel CEyE', 0.9, 0.45),
   it('anestesia', 'Equipo de anestesia', 0.7, 0.6),
   it('mesa-mayo', 'Mesa Mayo', 0.6, 0.4),
   it('mesa-rinon', 'Mesa riñón', 1.2, 0.6),
@@ -52,6 +57,7 @@ export const CATALOGO: ItemCatalogo[] = [
   it('carro-curacion', 'Carro de curación', 0.7, 0.45),
   it('portasueros', 'Portavenoclisis', 0.5, 0.5),
   it('lavabo-cirujano', 'Lavabo de cirujanos', 1.5, 0.6),
+  it('mesa-tarja', 'Mesa alta con tarja', 1.2, 0.7),
   it('asiento-giratorio', 'Asiento giratorio', 0.45, 0.45),
   it('banqueta', 'Banqueta de altura', 0.5, 0.35),
   it('bote-rpbi', 'Bote RPBI', 0.4, 0.4),
@@ -88,6 +94,7 @@ export const CATALOGO: ItemCatalogo[] = [
   // Alimentos (NOM-251-SSA1-2009)
   it('mesa-inox', 'Mesa de acero inoxidable', 1.5, 0.7),
   it('tarja-doble', 'Tarja de 2 tinas', 1.4, 0.6),
+  it('mesa-tarja-doble', 'Mesa con doble tarja', 1.8, 0.7),
   it('lavamanos', 'Lavamanos exclusivo', 0.5, 0.45),
   it('estufa-ind', 'Estufa industrial', 1.2, 0.8),
   it('horno', 'Horno', 0.9, 0.8),
@@ -112,7 +119,7 @@ export const CATEGORIAS: Categoria[] = [
     id: 'hospitalario',
     nombre: 'Hospitalario',
     norma: 'NOM-016-SSA3-2012',
-    claves: ['cama-hosp', 'camilla', 'mesa-exploracion', 'mesa-quirurgica', 'transfer', 'transfer-barrera', 'lampara-quir', 'anestesia', 'mesa-mayo', 'mesa-rinon', 'mesa-pasteur', 'carro-rojo', 'carro-curacion', 'portasueros', 'lavabo-cirujano', 'lavabo', 'asiento-giratorio', 'banqueta', 'negatoscopio', 'bote-rpbi', 'bote', 'rejilla-sup', 'rejilla-inf'],
+    claves: ['cama-hosp', 'camilla', 'camilla-traslado', 'mesa-exploracion', 'mesa-quirurgica', 'mesa-obstetrica', 'cama-parto', 'transfer', 'transfer-barrera', 'lampara-quir', 'anestesia', 'mesa-mayo', 'mesa-rinon', 'mesa-pasteur', 'carro-rojo', 'carro-curacion', 'portasueros', 'lavabo-cirujano', 'mesa-tarja', 'lavabo', 'asiento-giratorio', 'banqueta', 'negatoscopio', 'bote-rpbi', 'bote', 'anaquel-ceye', 'autoclave-emp', 'rejilla-sup', 'rejilla-inf'],
   },
   {
     id: 'plagas',
@@ -130,12 +137,14 @@ export const CATEGORIAS: Categoria[] = [
     id: 'alimentos',
     nombre: 'Alimentos',
     norma: 'NOM-251-SSA1-2009',
-    claves: ['mesa-inox', 'tarja-doble', 'lavamanos', 'estufa-ind', 'horno', 'freidora', 'campana', 'refrigerador', 'congelador', 'camara-fria', 'anaquel', 'tarima', 'bascula', 'bote-pedal', 'trampa-grasa', 'coladera', 'rejilla-sup', 'rejilla-inf'],
+    claves: ['mesa-inox', 'tarja-doble', 'mesa-tarja-doble', 'lavamanos', 'estufa-ind', 'horno', 'freidora', 'campana', 'refrigerador', 'congelador', 'camara-fria', 'anaquel', 'tarima', 'bascula', 'bote-pedal', 'trampa-grasa', 'coladera', 'rejilla-sup', 'rejilla-inf'],
   },
 ];
 
 /** Elementos que solo se colocan sobre un muro, pegados a su cara. */
-export const DE_MURO = new Set(['rejilla-sup', 'rejilla-inf']);
+export const DE_MURO = new Set(['rejilla-sup', 'rejilla-inf', 'autoclave-emp']);
+/** Elementos de muro que lo atraviesan: el frente queda en la cara del muro y el resto detrás. */
+export const EMPOTRADOS = new Set(['autoclave-emp']);
 
 export const itemPorClave = (clave: string) => CATALOGO.find((i) => i.clave === clave);
 
@@ -148,7 +157,7 @@ export const itemsDeCategoria = (id: string) =>
  */
 export function dibujarSimbolo(ctx: CanvasRenderingContext2D, clave: string, w: number, h: number, color: string, lw: number) {
   // Camas y mesas largas dibujadas más anchas que largas: el símbolo sigue el lado largo
-  if (w > h && ['cama-hosp', 'camilla', 'mesa-exploracion', 'mesa-quirurgica', 'mesa-rx'].includes(clave)) {
+  if (w > h && ['cama-hosp', 'camilla', 'camilla-traslado', 'mesa-exploracion', 'mesa-quirurgica', 'mesa-obstetrica', 'cama-parto', 'mesa-rx'].includes(clave)) {
     ctx.save();
     ctx.rotate(Math.PI / 2);
     dibujarSimbolo(ctx, clave, h, w, color, lw);
@@ -348,6 +357,68 @@ export function dibujarSimbolo(ctx: CanvasRenderingContext2D, clave: string, w: 
       redondo(0.15, 0.04, 0.7, 0.1, 0.1);
       for (const [fx, fy] of [[0.12, 0.06], [0.88, 0.06], [0.12, 0.94], [0.88, 0.94]]) circ(X(fx), Y(fy), m * 0.06, '#ffffff');
       break;
+    case 'camilla-traslado':
+      caja();
+      lf(0, 0.3, 1, 0.3); // cabecera levantada
+      redondo(0.15, 0.06, 0.7, 0.16, 0.1);
+      lf(0.04, 0.35, 0.04, 0.68); // barandal
+      for (const [fx, fy] of [[0.1, 0.06], [0.9, 0.06], [0.1, 0.94], [0.9, 0.94]]) circ(X(fx), Y(fy), m * 0.05, '#ffffff');
+      break;
+    case 'autoclave-emp': {
+      // Vista en planta: cuerpo (detrás del muro) y el frente con la tapa hacia el cuarto (abajo)
+      caja('#f3f4f6');
+      ctx.beginPath();
+      ctx.ellipse(0, -h * 0.05, w * 0.36, h * 0.38, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      rect(0, 0.97, 1, 0.03, '#9aa3ad');
+      ctx.lineWidth = lw * 2;
+      lf(0.14, 1.03, 0.86, 1.03); // tapa
+      ctx.lineWidth = lw;
+      break;
+    }
+    case 'anaquel-ceye':
+      // Anaquel cerrado: cuerpo con repisas (líneas) y dos puertas de vidrio al frente (abajo)
+      caja('#eef0f2');
+      ctx.lineWidth = lw * 0.6;
+      ctx.setLineDash([lw * 3, lw * 2]);
+      for (const fy of [0.3, 0.55, 0.8]) lf(0.05, fy, 0.95, fy);
+      ctx.setLineDash([]);
+      ctx.lineWidth = lw;
+      rect(0, 0.9, 0.5, 0.1, '#cfe3f3');
+      rect(0.5, 0.9, 0.5, 0.1, '#cfe3f3');
+      break;
+    case 'cama-parto':
+    case 'mesa-obstetrica': {
+      if (clave === 'cama-parto') {
+        // Cama: contorno con cabecera y piecera, ruedas en las esquinas
+        caja();
+        lf(0, 0.03, 1, 0.03);
+        lf(0, 0.97, 1, 0.97);
+        for (const [fx, fy] of [[0.08, 0.06], [0.92, 0.06], [0.08, 0.94], [0.92, 0.94]]) circ(X(fx), Y(fy), m * 0.04);
+      }
+      // Respaldo (cabecera arriba), asiento con escotadura, sección de piernas y pierneras a los lados
+      ctx.beginPath();
+      ctx.roundRect(X(0.04), Y(0.02), w * 0.92, h * 0.43, m * 0.08);
+      ctx.fill();
+      ctx.stroke();
+      // Asiento con la escotadura al frente
+      ctx.beginPath();
+      ctx.moveTo(X(0.04), Y(0.46));
+      ctx.lineTo(X(0.96), Y(0.46));
+      ctx.lineTo(X(0.96), Y(0.63));
+      ctx.lineTo(X(0.66), Y(0.63));
+      ctx.arc(0, Y(0.63), w * 0.16, 0, Math.PI, true);
+      ctx.lineTo(X(0.04), Y(0.63));
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      rect(0.04, 0.68, 0.92, 0.3); // sección de piernas
+      // Pierneras y brazos de apoyo
+      for (const fx of [0.02, 0.98]) circ(X(fx), Y(0.58), m * 0.09, '#ffffff');
+      rect(0, 0.2, 0.05, 0.18);
+      rect(0.95, 0.2, 0.05, 0.18);
+      break;
+    }
     case 'mesa-exploracion':
       caja();
       lf(0, 0.3, 1, 0.3);
@@ -663,6 +734,26 @@ export function dibujarSimbolo(ctx: CanvasRenderingContext2D, clave: string, w: 
       caja();
       tinas(2);
       break;
+    case 'mesa-tarja':
+    case 'mesa-tarja-doble': {
+      // Mesa de acero con tinas a la izquierda, escurridero a la derecha y respaldo atrás
+      const doble = clave === 'mesa-tarja-doble';
+      caja();
+      lf(0, 0.07, 1, 0.07); // respaldo
+      const tinasX = doble ? [[0.08, 0.36], [0.39, 0.67]] : [[0.06, 0.42]];
+      const [ty0, ty1] = doble ? [0.17, 0.87] : [0.15, 0.82];
+      for (const [a, b] of tinasX) {
+        redondo(a, ty0, b - a, ty1 - ty0, 0.06);
+        circ(X((a + b) / 2), Y((ty0 + ty1) / 2), m * 0.05);
+      }
+      // Escurridero con canales
+      const e0 = tinasX[tinasX.length - 1][1] + 0.04;
+      const e1 = 0.97;
+      ctx.lineWidth = lw * 0.6;
+      for (let i = 1; i <= 5; i++) lf(e0 + (i * (e1 - e0)) / 6, 0.2, e0 + (i * (e1 - e0)) / 6, 0.85);
+      ctx.lineWidth = lw;
+      break;
+    }
     case 'estufa-ind':
       caja();
       hornillas(3, 2);

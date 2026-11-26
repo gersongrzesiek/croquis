@@ -1,7 +1,7 @@
-import { CATALOGO, CATEGORIAS, DE_MURO, dibujarSimbolo, itemPorClave, itemsDeCategoria, type ItemCatalogo } from './catalogo';
+import { CATALOGO, CATEGORIAS, DE_MURO, EMPOTRADOS, dibujarSimbolo, itemPorClave, itemsDeCategoria, type ItemCatalogo } from './catalogo';
 import { cajaDe, cajaDeTodos, mover, posEtiqueta, puntoLocal, puntosClave, toca } from './elementos';
 import { inyectarEstilos } from './estilos';
-import { exportarPNG, type ImagenCroquis } from './exportar';
+import { exportarPNG, tamanoImagen, type ImagenCroquis } from './exportar';
 import { aMundo, areaPoligono, dist, distBorde, enPoligono, formatoM, insetPoligono, lado, proyectar, recortarPoligono, simplificar } from './geometria';
 import { ICONOS } from './iconos';
 import { ALTURA_MUROS, aIso, dibujarIsometrico, encuadreIso, opcionesIso, usarElevacion } from './isometrico';
@@ -23,7 +23,10 @@ import {
   type Pt,
   type Texto,
   type Trazo,
+  type Imagen,
+  datosLimpios,
 } from './modelo';
+import { alCargarImagen, prepararImagen } from './imagenes';
 import { alcanceHaz, dibujarEscena, tieneHaz, type Vista } from './render';
 
 
@@ -45,7 +48,8 @@ export type Herramienta =
   | 'linea'
   | 'lapiz'
   | 'camino'
-  | 'norte';
+  | 'norte'
+  | 'imagen';
 
 /** `sep` deja un espacio después del botón para agrupar la barra. */
 const HERRAMIENTAS: { h: Herramienta; nombre: string; tecla: string; ayuda: string; sep?: true }[] = [
@@ -67,6 +71,7 @@ const HERRAMIENTAS: { h: Herramienta; nombre: string; tecla: string; ayuda: stri
   { h: 'lapiz', nombre: 'Lápiz', tecla: 'P', ayuda: 'Dibujo a mano alzada.' },
   { h: 'camino', nombre: 'Camino', tecla: 'G', ayuda: 'Marca el recorrido de las personas, desde donde empiezan hasta donde llegan: a mano alzada (queda como una línea suave) o recto por tramos. Las flechas siguen el sentido en que lo trazaste.', sep: true },
   { h: 'norte', nombre: 'Orientación', tecla: 'O', ayuda: 'Clic para colocar la orientación (N, S, E u O) con su flecha. Gira la flecha con su manija o escribe el ángulo en el panel; la letra no gira. Solo hay una por croquis: un nuevo clic la mueve.' },
+  { h: 'imagen', nombre: 'Imagen', tecla: 'I', ayuda: 'Pega una imagen con Ctrl+V (en cualquier herramienta), arrástrala desde una carpeta al lienzo o elígela de un archivo. Sirve, por ejemplo, para calcar encima la foto de un plano.' },
 ];
 
 /** Tinta azul de plano: selección, manijas y guías sobre el lienzo. */
@@ -177,7 +182,7 @@ export class Editor {
   private busquedaMueble = '';
   private fantasmaAng = 0;
   private aberturaInvertir = false;
-  private estilo = { color: '#111827', muro: '#374151', grosorMuro: 0.15, relleno: '#bfdbfe', patron: 'ninguno' as Patron, acceso: '#16a34a', camino: '#dc2626', grosorCamino: 0.05, separacionCamino: 1, dobleSentido: false, caminoDiscontinuo: false, caminoRecto: false, fondoCuarto: '#ffffff', dobleHoja: false, chaflan: 1 };
+  private estilo = { color: '#111827', muro: '#374151', grosorMuro: 0.15, relleno: '#bfdbfe', patron: 'ninguno' as Patron, acceso: '#16a34a', camino: '#dc2626', grosorCamino: 0.05, separacionCamino: 1, dobleSentido: false, caminoDiscontinuo: false, caminoRecto: false, fondoCuarto: '#ffffff', dobleHoja: false, chaflan: 1, elevador: false };
   private pendiente: string | null = null;
   private punteros = new Map<number, Pt>();
   private pellizco: { d: number; c: Pt; escala: number; ox: number; oy: number } | null = null;
@@ -185,6 +190,10 @@ export class Editor {
   private dibujoPedido = false;
   private observador: ResizeObserver;
   private quitarTeclas: () => void;
+  private quitarImagenes: () => void;
+  private btnImagenes!: HTMLButtonElement;
+  /** Proporción ancho/alto de la imagen cuya esquina se arrastra. */
+  private proporcion = 1;
 
   constructor(
     contenedor: HTMLElement,
@@ -204,6 +213,7 @@ export class Editor {
     this.observador = new ResizeObserver(() => this.ajustarTamano());
     this.observador.observe(this.canvas.parentElement!);
     this.quitarTeclas = this.escucharTeclas();
+    this.quitarImagenes = this.escucharImagenes();
     this.escucharPunteros();
     this.ajustarTamano();
     if (this.datos.elementos.length) {
@@ -222,6 +232,7 @@ export class Editor {
   destruir() {
     this.observador.disconnect();
     this.quitarTeclas();
+    this.quitarImagenes();
     this.raiz.remove();
   }
 
@@ -269,6 +280,16 @@ export class Editor {
         this.datos.opciones.medidasMuros = v;
         this.notificar();
       }, true),
+      (this.btnImagenes = alternar('Imágenes', 'Mostrar u ocultar todas las imágenes pegadas (también en el PNG)', () => !this.datos.opciones.ocultarImagenes, (v) => {
+        if (v) delete this.datos.opciones.ocultarImagenes;
+        else {
+          this.datos.opciones.ocultarImagenes = true;
+          // Lo oculto no queda seleccionado
+          for (const e of this.datos.elementos) if (e.tipo === 'imagen') this.seleccion.delete(e.id);
+          this.actualizarPanel();
+        }
+        this.notificar();
+      }, true)),
     );
     barra.append(h('span', { className: 'crq-esp' }));
     if (this.o.modo === 'modal') {
@@ -289,7 +310,7 @@ export class Editor {
         }, 'crq-borde'),
         this.boton('Abrir', 'Abrir un archivo .croquis.json', () => this.abrirArchivo(), 'crq-borde'),
         this.boton('Guardar', 'Descargar como .croquis.json', () => this.descargar('json'), 'crq-borde'),
-        this.boton('Descargar PNG', 'Descargar imagen', () => this.descargar('png'), 'crq-primario'),
+        this.boton('Descargar PNG', 'Descargar imagen', (e) => this.menuPNG(e.currentTarget as HTMLElement), 'crq-primario'),
       );
     }
 
@@ -322,7 +343,7 @@ export class Editor {
     this.raiz.append(barra, cuerpo, this.estado, tip);
   }
 
-  private boton(contenido: string, titulo: string, fn: () => void, clase = '') {
+  private boton(contenido: string, titulo: string, fn: (e: MouseEvent) => void, clase = '') {
     const b = h('button', { type: 'button', title: titulo, className: clase });
     b.innerHTML = contenido;
     b.addEventListener('click', fn);
@@ -522,8 +543,13 @@ export class Editor {
       p.append(this.campoNum('Grosor del muro (m)', this.estilo.grosorMuro, 0.05, 0.6, 0.01, (v) => (this.estilo.grosorMuro = v)));
       p.append(this.campoColor('Color del muro', this.estilo.muro, (c) => (this.estilo.muro = c)));
       if (this.herr === 'cuarto') p.append(this.campoColor('Color de fondo', this.estilo.fondoCuarto, (c) => (this.estilo.fondoCuarto = c), ['#ffffff', ...RELLENOS]));
+    } else if (this.herr === 'imagen') {
+      p.append(h('div', { className: 'crq-botones' }, [this.boton('Elegir imagen…', 'Abrir una imagen de tu equipo', () => this.elegirImagen())]));
+      p.append(h('p', { textContent: 'Luego ajusta su tamaño con la esquina, gírala con la manija redonda y cambia su transparencia en el panel.' }));
     } else if (this.herr === 'chaflan') {
       p.append(this.campoNum('Distancia del corte (m)', this.estilo.chaflan, 0.1, 20, 0.05, (v) => (this.estilo.chaflan = v)));
+    } else if (this.herr === 'puerta') {
+      p.append(this.campoCheck('Puerta de elevador (corrediza, sin giro)', this.estilo.elevador, (v) => (this.estilo.elevador = v), false));
     } else if (this.herr === 'puerta2') {
       p.append(this.campoCheck('Doble puerta (dos puertas que se juntan al centro, tipo quirófano)', this.estilo.dobleHoja, (v) => (this.estilo.dobleHoja = v), false));
     } else if (this.herr === 'area') {
@@ -555,14 +581,29 @@ export class Editor {
       p.append(this.campoNum('Distancia entre flechas (m)', this.estilo.separacionCamino, 0.3, 10, 0.1, (v) => (this.estilo.separacionCamino = v)));
       p.append(this.campoCheck('Doble sentido (ida y vuelta)', this.estilo.dobleSentido, (v) => (this.estilo.dobleSentido = v), false));
       p.append(this.campoCheck('Línea discontinua', this.estilo.caminoDiscontinuo, (v) => (this.estilo.caminoDiscontinuo = v), false));
-    } else if (this.herr !== 'seleccionar' && this.herr !== 'mano' && this.herr !== 'puerta' && this.herr !== 'ventana' && this.herr !== 'dividir' && this.herr !== 'norte') {
+    } else if (this.herr !== 'seleccionar' && this.herr !== 'mano' && this.herr !== 'ventana' && this.herr !== 'dividir' && this.herr !== 'norte') {
       p.append(this.campoColor('Color', this.estilo.color, (c) => (this.estilo.color = c)));
     }
     if (this.herr === 'seleccionar' || this.herr === 'mano') {
       p.append(
         h('h3', { textContent: 'Atajos' }),
-        h('p', { innerHTML: 'Ctrl+Z deshacer · Ctrl+Y rehacer<br>Supr borrar · Ctrl+D duplicar<br>Flechas mover · R girar<br>Rueda: zoom · Espacio+arrastrar: mover vista' }),
+        h('p', { innerHTML: 'Ctrl+Z deshacer · Ctrl+Y rehacer<br>Supr borrar · Ctrl+D duplicar<br>Flechas mover · R girar<br>Ctrl+V pegar una imagen<br>Rueda: zoom · Espacio+arrastrar: mover vista' }),
       );
+      const bloqueadas = this.datos.elementos.filter((e): e is Imagen => e.tipo === 'imagen' && !!e.bloqueada);
+      if (bloqueadas.length) {
+        p.append(
+          h('p', { textContent: bloqueadas.length === 1 ? 'Hay una imagen bloqueada: no se selecciona con un clic.' : `Hay ${bloqueadas.length} imágenes bloqueadas: no se seleccionan con un clic.` }),
+          h('div', { className: 'crq-botones' }, [
+            this.boton('Desbloquear imágenes', 'Permite volver a seleccionarlas en el lienzo', () => {
+              this.registrar();
+              bloqueadas.forEach((b) => delete b.bloqueada);
+              this.seleccion = new Set(bloqueadas.map((b) => b.id));
+              this.actualizarPanel();
+              this.notificar();
+            }),
+          ]),
+        );
+      }
     }
   }
 
@@ -728,7 +769,7 @@ export class Editor {
     const p = this.panel;
     const nombres: Record<Elemento['tipo'], string> = {
       muro: (el as Muro).chaflan ? 'Corte de esquina' : 'Muro',
-      puerta: 'Puerta',
+      puerta: (el as Abertura).elevador ? 'Puerta de elevador' : 'Puerta',
       ventana: 'Ventana',
       area: (el as Area).muros?.length ? 'Cuarto' : 'Área',
       mueble: itemPorClave((el as Mueble).clave)?.nombre ?? 'Mueble',
@@ -738,6 +779,7 @@ export class Editor {
       linea: 'Línea',
       trazo: (el as Trazo).camino ? 'Camino' : 'Trazo',
       norte: 'Orientación',
+      imagen: 'Imagen',
     };
     p.append(h('h3', { textContent: nombres[el.tipo] }));
     switch (el.tipo) {
@@ -768,6 +810,17 @@ export class Editor {
       case 'ventana':
         p.append(this.campoNum('Ancho (m)', el.ancho, 0.3, 6, 0.05, (v) => (el.ancho = v)));
         if (el.tipo === 'puerta') {
+          p.append(
+            this.campoCheck('Puerta de elevador (corrediza, sin giro)', !!el.elevador, (v) => {
+              if (v) el.elevador = true;
+              else delete el.elevador;
+              this.actualizarPanel();
+            }),
+          );
+        }
+        if (el.tipo === 'puerta' && el.elevador) {
+          p.append(this.campoCheck('Vestíbulo del otro lado', el.invertir, (v) => (el.invertir = v)));
+        } else if (el.tipo === 'puerta') {
           p.append(this.campoCheck('Doble abatimiento (vaivén)', !!el.vaiven, (v) => (el.vaiven = v)));
           p.append(this.campoCheck('Doble puerta (dos puertas)', el.hojas === 2, (v) => {
             el.hojas = v ? 2 : 1;
@@ -800,6 +853,22 @@ export class Editor {
       case 'mueble':
         p.append(this.campoTexto('Etiqueta', el.etiqueta, (v) => (el.etiqueta = v)));
         p.append(this.campoCheck('Ajustar texto al mueble', !!el.ajustarEtq, (v) => (el.ajustarEtq = v)));
+        if (el.clave === 'rejilla-sup' || el.clave === 'rejilla-inf') {
+          p.append(
+            this.campoCheck(el.clave === 'rejilla-sup' ? 'Mostrar el aire que sale (flechas)' : 'Mostrar el aire que se extrae (flechas)', !!el.aire, (v) => {
+              if (v) el.aire = true;
+              else delete el.aire;
+            }),
+          );
+        }
+        if (el.clave === 'transfer' || el.clave === 'transfer-barrera') {
+          p.append(
+            this.campoCheck('Doble puerta de vaivén encima (media puerta)', !!el.puertaTransfer, (v) => {
+              if (v) el.puertaTransfer = true;
+              else delete el.puertaTransfer;
+            }),
+          );
+        }
         p.append(this.campoNum('Ancho (m)', el.ancho, 0.1, 20, 0.05, (v) => (el.ancho = v)));
         p.append(this.campoNum('Fondo (m)', el.alto, 0.1, 20, 0.05, (v) => (el.alto = v)));
         p.append(this.campoNum('Ángulo (°)', Math.round((el.ang * 180) / Math.PI), -360, 360, 15, (v) => (el.ang = (v * Math.PI) / 180)));
@@ -837,6 +906,42 @@ export class Editor {
           }
         }
         break;
+      case 'imagen': {
+        const valor = h('span', { className: 'crq-valor', textContent: `${el.transparencia} %` });
+        const r = h('input', { type: 'range', min: '0', max: '95', step: '5', value: String(el.transparencia) });
+        r.addEventListener('input', () => {
+          valor.textContent = `${r.value} %`;
+          this.editar(() => (el.transparencia = Number(r.value)), false);
+        });
+        r.addEventListener('change', () => this.editar(() => (el.transparencia = Number(r.value)), true));
+        p.append(h('label', { className: 'crq-campo' }, [h('span', { className: 'crq-fila-etq' }, ['Transparencia', valor]), r]));
+        const k = el.alto / el.ancho;
+        p.append(
+          this.campoNum('Ancho (m)', +el.ancho.toFixed(2), 0.1, 500, 0.1, (v) => {
+            el.ancho = v;
+            el.alto = v * k;
+          }),
+        );
+        p.append(
+          this.campoNum('Alto (m)', +el.alto.toFixed(2), 0.1, 500, 0.1, (v) => {
+            el.alto = v;
+            el.ancho = v / k;
+          }),
+        );
+        p.append(this.campoNum('Ángulo (°)', Math.round((el.ang * 180) / Math.PI), -360, 360, 15, (v) => (el.ang = (v * Math.PI) / 180)));
+        p.append(this.campoCheck('Encima del dibujo', !!el.encima, (v) => (el.encima = v)));
+        p.append(
+          this.campoCheck('Bloquear (no se selecciona con un clic, para calcar encima)', !!el.bloqueada, (v) => {
+            el.bloqueada = v;
+            if (v) {
+              this.seleccion.delete(el.id);
+              this.actualizarPanel();
+            }
+          }),
+        );
+        p.append(h('p', { textContent: 'Arrastra la esquina para cambiar el tamaño sin deformarla (Shift para deformarla). Para calcar un plano, dale su medida real con el ancho o el alto. Si un cuarto con fondo la tapa, activa «Encima del dibujo».' }));
+        break;
+      }
       case 'texto': {
         const t = this.campoTexto('Texto', el.texto, (v) => (el.texto = v), true);
         p.append(t);
@@ -899,7 +1004,7 @@ export class Editor {
   private accionesSeleccion() {
     const cont = h('div', { className: 'crq-botones' });
     const sel = this.seleccionados();
-    if (sel.some((e) => e.tipo === 'mueble' || e.tipo === 'puerta' || e.tipo === 'ventana' || e.tipo === 'texto' || e.tipo === 'norte')) {
+    if (sel.some((e) => e.tipo === 'mueble' || e.tipo === 'puerta' || e.tipo === 'ventana' || e.tipo === 'texto' || e.tipo === 'norte' || e.tipo === 'imagen')) {
       cont.append(this.boton('Girar 90°', 'Girar (R)', () => this.girarSeleccion(Math.PI / 2)));
     }
     cont.append(
@@ -978,7 +1083,7 @@ export class Editor {
 
   private aplicarColor(el: Elemento, c: string) {
     if (el.tipo === 'area') el.borde = c;
-    else if (el.tipo !== 'norte') el.color = c;
+    else if (el.tipo !== 'norte' && el.tipo !== 'imagen') el.color = c;
   }
 
   // ───────────────────────── Historial ─────────────────────────
@@ -1085,7 +1190,7 @@ export class Editor {
     if (!sel.length) return;
     this.registrar();
     for (const el of sel) {
-      if (el.tipo === 'mueble' || el.tipo === 'texto' || el.tipo === 'norte') el.ang = normalizarAng(el.ang + ang);
+      if (el.tipo === 'mueble' || el.tipo === 'texto' || el.tipo === 'norte' || el.tipo === 'imagen') el.ang = normalizarAng(el.ang + ang);
       else if (el.tipo === 'puerta') {
         // Recorre las 4 orientaciones de la puerta sobre el mismo muro
         if (!el.invertir && !el.espejo) el.espejo = true;
@@ -1204,9 +1309,9 @@ export class Editor {
   }
 
   /** Busca el muro más cercano para colocar una puerta o ventana. */
-  private colocarEnMuro(p: Pt, ancho: number): { p: Pt; ang: number; grosor: number } | null {
+  private colocarEnMuro(p: Pt, ancho: number, alcance = 0.3): { p: Pt; ang: number; grosor: number } | null {
     let mejor: { p: Pt; ang: number; grosor: number } | null = null;
-    let md = Math.max(this.tol(25), 0.3);
+    let md = Math.max(this.tol(25), alcance);
     for (const el of this.datos.elementos) {
       if (el.tipo !== 'muro') continue;
       const l = dist(el.a, el.b);
@@ -1232,7 +1337,7 @@ export class Editor {
     const tipo = herr === 'ventana' ? 'ventana' : 'puerta';
     const vaiven = herr === 'puerta2';
     const hojas: 1 | 2 = vaiven && this.estilo.dobleHoja ? 2 : 1;
-    const ancho = tipo === 'ventana' ? 1.2 : hojas === 2 ? 1.4 : 0.9;
+    const ancho = tipo === 'ventana' ? 1.2 : hojas === 2 ? 1.4 : herr === 'puerta' && this.estilo.elevador ? 1.0 : 0.9;
     const m = this.colocarEnMuro(p, ancho);
     return {
       id: nuevoId(),
@@ -1244,6 +1349,7 @@ export class Editor {
       invertir: this.aberturaInvertir,
       espejo: false,
       ...(vaiven ? { vaiven, hojas } : {}),
+      ...(herr === 'puerta' && this.estilo.elevador ? { elevador: true } : {}),
       color: '#111827',
     };
   }
@@ -1253,12 +1359,16 @@ export class Editor {
    * con el fondo contra el muro. Devuelve false si no hay muro cerca.
    */
   private pegarAMuro(m: Mueble, p: Pt): boolean {
-    const w = this.colocarEnMuro(p, m.ancho);
+    // Un empotrado se busca más lejos: basta con apuntar al cuarto frente al muro
+    const w = this.colocarEnMuro(p, m.ancho, EMPOTRADOS.has(m.clave) ? Math.max(0.3, m.alto) : 0.3);
     if (!w) return false;
     const nx = -Math.sin(w.ang);
     const ny = Math.cos(w.ang);
     const lado = (p.x - w.p.x) * nx + (p.y - w.p.y) * ny >= 0 ? 1 : -1;
-    const d = (w.grosor / 2 + m.alto / 2) * lado;
+    // Los empotrados (autoclave) atraviesan el muro: solo su frente sobresale de la cara del muro
+    const empotrado = EMPOTRADOS.has(m.clave);
+    const d = (empotrado ? w.grosor / 2 + 0.02 - m.alto / 2 : w.grosor / 2 + m.alto / 2) * lado;
+    if (empotrado) m.empotre = w.grosor;
     m.p = { x: w.p.x + nx * d, y: w.p.y + ny * d };
     m.ang = normalizarAng(lado > 0 ? w.ang : w.ang + Math.PI);
     return true;
@@ -1674,13 +1784,14 @@ export class Editor {
   private elementoEn(p: Pt): Elemento | null {
     const tol = this.tol(6);
     // Primero los de encima (orden de dibujo invertido); las áreas al final
-    const prioridad = (e: Elemento) => (e.tipo === 'area' ? 0 : e.tipo === 'muro' ? 1 : 2);
+    const prioridad = (e: Elemento) => (e.tipo === 'imagen' ? (e.encima ? 3 : -1) : e.tipo === 'area' ? 0 : e.tipo === 'muro' ? 1 : 2);
     // Entre áreas que se encimen gana la más chica, para poder elegir un cuarto que está dentro de otro.
     const tam = (e: Elemento) => (e.tipo === 'area' ? Math.abs(areaPoligono(e.puntos)) : 0);
     const lista = this.datos.elementos
       .map((e, i) => ({ e, i }))
       .sort((a, b) => prioridad(b.e) - prioridad(a.e) || tam(a.e) - tam(b.e) || b.i - a.i);
-    for (const { e } of lista) if (toca(e, p, tol)) return e;
+    const oculta = (e: Elemento) => e.tipo === 'imagen' && (e.bloqueada || !!this.datos.opciones.ocultarImagenes);
+    for (const { e } of lista) if (!oculta(e) && toca(e, p, tol)) return e;
     return null;
   }
 
@@ -1719,6 +1830,12 @@ export class Editor {
       return [...vertices.map((p, i) => ({ cual: i, p })), ...etq];
     }
     if (el.tipo === 'norte') return [{ cual: 'rot', p: aMundo({ x: 0, y: -el.tam * 0.8 - this.tol(14) }, el.p, el.ang) }];
+    if (el.tipo === 'imagen') {
+      return [
+        { cual: 'rot', p: aMundo({ x: 0, y: -el.alto / 2 - this.tol(22) }, el.p, el.ang) },
+        { cual: 'tam', p: aMundo({ x: el.ancho / 2, y: el.alto / 2 }, el.p, el.ang) },
+      ];
+    }
     if (el.tipo === 'mueble') {
       return [
         { cual: 'rot', p: aMundo({ x: 0, y: -el.alto / 2 - this.tol(22) }, el.p, el.ang) },
@@ -1823,6 +1940,7 @@ export class Editor {
                 if (dist(o.b, q) < 1e-6) vinculados.push({ el: o, extremo: 'b' });
               }
             }
+            if (el.tipo === 'imagen') this.proporcion = el.ancho / el.alto;
             this.accion = { k: 'manija', id: el.id, cual: m.cual, previo: this.instantanea(), vinculados };
             return;
           }
@@ -1876,10 +1994,13 @@ export class Editor {
       }
       case 'mueble': {
         const m = this.nuevoMueble(p);
-        if (DE_MURO.has(m.clave) && !this.pegarAMuro(m, p)) return this.aviso('La rejilla solo se coloca sobre un muro: haz clic junto a uno.');
+        if (DE_MURO.has(m.clave) && !this.pegarAMuro(m, p)) return this.aviso(`${itemPorClave(m.clave)?.nombre ?? 'Este elemento'} solo se coloca sobre un muro: haz clic junto a uno, del lado donde va el frente.`);
         this.agregar(m);
         return;
       }
+      case 'imagen':
+        this.elegirImagen(p);
+        return;
       case 'norte': {
         // Solo un norte por croquis: si ya existe, se mueve al nuevo punto
         const previo = this.datos.elementos.find((e): e is Norte => e.tipo === 'norte');
@@ -2076,6 +2197,26 @@ export class Editor {
       let ang = Math.atan2(p.y - el.p.y, p.x - el.p.x) + Math.PI / 2;
       if (!this.shift) ang = Math.round(ang / (Math.PI / 36)) * (Math.PI / 36);
       el.ang = normalizarAng(ang);
+    } else if (el.tipo === 'imagen') {
+      if (a.cual === 'rot') {
+        let ang = Math.atan2(p.y - el.p.y, p.x - el.p.x) + Math.PI / 2;
+        if (!this.shift) ang = Math.round(ang / (Math.PI / 12)) * (Math.PI / 12);
+        el.ang = normalizarAng(ang);
+      } else if (a.cual === 'tam') {
+        // Se agranda desde el centro; sin Shift conserva la proporción de la imagen
+        const l = puntoLocal(el, p);
+        const w = Math.max(0.1, Math.abs(l.x) * 2);
+        const hh = Math.max(0.1, Math.abs(l.y) * 2);
+        if (this.shift) {
+          el.ancho = w;
+          el.alto = hh;
+        } else {
+          const k = this.proporcion;
+          const ancho = Math.max(w, hh * k);
+          el.ancho = ancho;
+          el.alto = ancho / k;
+        }
+      }
     } else if (el.tipo === 'mueble') {
       if (a.cual === 'rot') {
         let ang = Math.atan2(p.y - el.p.y, p.x - el.p.x) + Math.PI / 2;
@@ -2134,6 +2275,7 @@ export class Editor {
         const y1 = Math.max(a.a.y, a.b.y);
         if (x1 - x0 > this.tol(3) || y1 - y0 > this.tol(3)) {
           for (const el of this.datos.elementos) {
+            if (el.tipo === 'imagen' && (el.bloqueada || this.datos.opciones.ocultarImagenes)) continue;
             const c = cajaDe(el);
             if (c.minx >= x0 && c.maxx <= x1 && c.miny >= y0 && c.maxy <= y1) this.seleccion.add(el.id);
           }
@@ -2210,7 +2352,7 @@ export class Editor {
       if (ctrl && k === 'a') {
         e.preventDefault();
         this.cambiarHerramienta('seleccionar');
-        this.seleccion = new Set(this.datos.elementos.map((x) => x.id));
+        this.seleccion = new Set(this.datos.elementos.filter((x) => !(x.tipo === 'imagen' && (x.bloqueada || this.datos.opciones.ocultarImagenes))).map((x) => x.id));
         this.actualizarPanel();
         this.dibujar();
         return;
@@ -2443,6 +2585,102 @@ export class Editor {
     }
   }
 
+  // ───────────────────────── Imágenes pegadas ─────────────────────────
+
+  /** Ctrl+V con una imagen en el portapapeles y arrastrar archivos de imagen al lienzo. */
+  private escucharImagenes() {
+    const pegar = (e: ClipboardEvent) => {
+      if (!this.raiz.isConnected) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      const archivo = [...(e.clipboardData?.items ?? [])].find((i) => i.kind === 'file' && i.type.startsWith('image/'))?.getAsFile();
+      if (!archivo) return;
+      e.preventDefault();
+      this.insertarImagen(archivo);
+    };
+    const lienzo = this.canvas.parentElement!;
+    const conImagen = (e: DragEvent) => [...(e.dataTransfer?.items ?? [])].some((i) => i.kind === 'file' && i.type.startsWith('image/'));
+    const encima = (e: DragEvent) => {
+      if (!conImagen(e)) return;
+      e.preventDefault();
+      e.dataTransfer!.dropEffect = 'copy';
+      lienzo.classList.add('crq-soltar');
+    };
+    const fuera = () => lienzo.classList.remove('crq-soltar');
+    const soltar = (e: DragEvent) => {
+      fuera();
+      const archivos = [...(e.dataTransfer?.files ?? [])].filter((f) => f.type.startsWith('image/'));
+      if (!archivos.length) return;
+      e.preventDefault();
+      const s = this.enPantalla(e);
+      const p = this.isometrico ? undefined : this.aMundo(s.x, s.y);
+      archivos.forEach((f, i) => this.insertarImagen(f, p && { x: p.x + i * 0.5, y: p.y + i * 0.5 }));
+    };
+    document.addEventListener('paste', pegar);
+    lienzo.addEventListener('dragover', encima);
+    lienzo.addEventListener('dragleave', fuera);
+    lienzo.addEventListener('drop', soltar);
+    const dejar = alCargarImagen(() => this.dibujar());
+    return () => {
+      document.removeEventListener('paste', pegar);
+      dejar();
+    };
+  }
+
+  /** Abre el selector de archivos; la imagen se centra en `p` (o en la vista). */
+  private elegirImagen(p?: Pt) {
+    const i = document.createElement('input');
+    i.type = 'file';
+    i.accept = 'image/*';
+    i.addEventListener('change', () => {
+      const f = i.files?.[0];
+      if (f) this.insertarImagen(f, p);
+    });
+    i.click();
+  }
+
+  /** Agrega la imagen al croquis, del tamaño de la vista, y la deja seleccionada para ajustarla. */
+  async insertarImagen(archivo: Blob, centro?: Pt) {
+    let prep;
+    try {
+      prep = await prepararImagen(archivo);
+    } catch {
+      this.aviso('No se pudo leer la imagen.');
+      return;
+    }
+    // La imagen se edita en el plano
+    if (this.isometrico) this.cambiarVista('plano');
+    const r = this.canvas.getBoundingClientRect();
+    const c = centro ?? this.aMundo(r.width / 2, r.height / 2);
+    // Ocupa como mucho el 70 % de lo que se ve, sin pasar del tamaño original a 100 px por metro
+    const maxW = (r.width * 0.7) / this.vista.escala;
+    const maxH = (r.height * 0.7) / this.vista.escala;
+    const k = Math.min(maxW / prep.ancho, maxH / prep.alto, 1 / 100);
+    // Si las imágenes estaban ocultas, se vuelven a mostrar para ver la nueva
+    if (this.datos.opciones.ocultarImagenes) {
+      delete this.datos.opciones.ocultarImagenes;
+      this.btnImagenes.classList.add('crq-activo');
+      this.btnImagenes.setAttribute('aria-pressed', 'true');
+    }
+    const clave = nuevoId();
+    this.datos.imagenes = { ...this.datos.imagenes, [clave]: prep.url };
+    const el: Imagen = {
+      id: nuevoId(),
+      tipo: 'imagen',
+      p: { x: c.x, y: c.y },
+      ancho: +(prep.ancho * k).toFixed(3),
+      alto: +(prep.alto * k).toFixed(3),
+      ang: 0,
+      img: clave,
+      transparencia: 30,
+    };
+    this.agregar(el);
+    if (this.herr !== 'seleccionar') this.cambiarHerramienta('seleccionar');
+    this.seleccion = new Set([el.id]);
+    this.actualizarPanel();
+    this.dibujar();
+  }
+
   // ───────────────────────── Archivos y resultado ─────────────────────────
 
   imagen(): ImagenCroquis {
@@ -2452,7 +2690,7 @@ export class Editor {
   private guardar() {
     this.terminarPoli();
     const img = this.imagen();
-    this.o.alGuardar?.({ datos: JSON.parse(JSON.stringify(this.datos)), ...img });
+    this.o.alGuardar?.({ datos: datosLimpios(this.datos), ...img });
   }
 
   private cancelar() {
@@ -2460,14 +2698,56 @@ export class Editor {
     this.o.alCancelar?.();
   }
 
-  private descargar(tipo: 'json' | 'png') {
+  /** Menú de "Descargar PNG": imagen ajustada o a tamaño real, con los píxeles por metro del zoom actual. */
+  private menuPNG(ancla: HTMLElement) {
+    const previo = this.raiz.querySelector('.crq-menu');
+    if (previo) return previo.remove();
+    const t = tamanoImagen(this.datos, this.vista.escala);
+    const menu = h('div', { className: 'crq-menu', role: 'menu' });
+    const opcion = (titulo: string, detalle: string, fn: () => void) => {
+      const b = h('button', { type: 'button', role: 'menuitem' }, [h('span', { textContent: titulo }), h('small', { textContent: detalle })]);
+      b.addEventListener('click', () => {
+        cerrar();
+        fn();
+      });
+      menu.append(b);
+    };
+    opcion('Ajustada al dibujo', 'Hasta 2000 px por lado', () => this.descargar('png'));
+    opcion(
+      'Tamaño real al zoom actual',
+      `${t.ancho.toLocaleString('es-MX')} × ${t.alto.toLocaleString('es-MX')} px · ${Math.round(this.vista.escala)} px por metro${t.reducida ? ' (reducida al máximo posible)' : ''}`,
+      () => this.descargar('png', this.vista.escala),
+    );
+    const r = ancla.getBoundingClientRect();
+    const base = this.raiz.getBoundingClientRect();
+    menu.style.top = `${r.bottom - base.top + 6}px`;
+    menu.style.right = `${base.right - r.right}px`;
+    this.raiz.append(menu);
+    const fuera = (e: PointerEvent) => {
+      if (!menu.contains(e.target as Node) && e.target !== ancla && !ancla.contains(e.target as Node)) cerrar();
+    };
+    const tecla = (e: KeyboardEvent) => e.key === 'Escape' && cerrar();
+    const cerrar = () => {
+      menu.remove();
+      document.removeEventListener('pointerdown', fuera, true);
+      document.removeEventListener('keydown', tecla, true);
+    };
+    document.addEventListener('pointerdown', fuera, true);
+    document.addEventListener('keydown', tecla, true);
+  }
+
+  private async descargar(tipo: 'json' | 'png', escala?: number) {
     const a = document.createElement('a');
     const fecha = new Date().toISOString().slice(0, 10);
     if (tipo === 'png') {
-      a.href = this.imagen().png;
-      a.download = this.isometrico ? `croquis-isometrico-${fecha}.png` : `croquis-${fecha}.png`;
+      this.terminarPoli();
+      const img = exportarPNG(this.datos, { ...this.o.exportar, ...(escala ? { escala } : {}) });
+      // Las imágenes grandes se descargan como archivo (un data URL muy largo puede fallar)
+      a.href = URL.createObjectURL(await (await fetch(img.png)).blob());
+      const sufijo = escala ? `-${img.ancho}x${img.alto}` : '';
+      a.download = (this.isometrico ? `croquis-isometrico-${fecha}` : `croquis-${fecha}`) + sufijo + '.png';
     } else {
-      a.href = URL.createObjectURL(new Blob([JSON.stringify(this.datos)], { type: 'application/json' }));
+      a.href = URL.createObjectURL(new Blob([JSON.stringify(datosLimpios(this.datos))], { type: 'application/json' }));
       a.download = `croquis-${fecha}.croquis.json`;
     }
     a.click();
@@ -2485,6 +2765,7 @@ export class Editor {
         this.registrar();
         this.datos.elementos = d.elementos;
         this.datos.opciones = d.opciones;
+        this.datos.imagenes = { ...this.datos.imagenes, ...d.imagenes };
         this.seleccion.clear();
         this.actualizarPanel();
         this.notificar();

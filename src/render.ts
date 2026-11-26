@@ -1,8 +1,9 @@
 import { dibujarSimbolo } from './catalogo';
 import { contorno, posEtiqueta, puntosTrazo } from './elementos';
-import { alturaModelo, focoRayos } from './muebles3d';
+import { alturaModelo, bisagrasTransfer, focoRayos } from './muebles3d';
 import { aMundo, areaPoligono, dist, enPoligono, formatoM, largosAcumulados, puntoEnRecorrido } from './geometria';
-import type { Abertura, Area, DatosCroquis, Elemento, Mueble, Muro, Patron, Pt, Trazo } from './modelo';
+import { imagenLista } from './imagenes';
+import type { Abertura, Area, DatosCroquis, Elemento, Imagen, Mueble, Muro, Patron, Pt, Trazo } from './modelo';
 
 /** pantalla = mundo * escala + o */
 export interface Vista {
@@ -33,6 +34,7 @@ const ORDEN: Record<Elemento['tipo'], number> = {
   acceso: 6,
   texto: 7,
   norte: 8,
+  imagen: -1,
 };
 
 const cachePatrones = new Map<string, CanvasPattern | null>();
@@ -96,7 +98,7 @@ export function alcanceHaz(el: Mueble, d: DatosCroquis): number {
   const dir = { x: frente.x - f.p.x, y: frente.y - f.p.y };
   const muros = poligonosMuros(d.elementos.filter((e): e is Muro => e.tipo === 'muro')).map((m) => m.pts as Pt[]);
   const obstaculos = d.elementos
-    .filter((o): o is Mueble => o.tipo === 'mueble' && o !== el && alturaModelo(o) > f.z - 0.3)
+    .filter((o): o is Mueble => o.tipo === 'mueble' && o !== el && o.clave !== 'lampara-quir' && alturaModelo(o) > f.z - 0.3)
     .map((o) => contorno(o))
     .filter((c) => !enPoligono(f.p, c));
   // Con un alcance fijado a mano, el haz solo se detiene antes si topa con un muro
@@ -254,6 +256,32 @@ function dibujarAbertura(ctx: CanvasRenderingContext2D, el: Abertura, fondo: str
     ctx.lineTo(w / 2, -g / 6);
     ctx.moveTo(-w / 2, g / 6);
     ctx.lineTo(w / 2, g / 6);
+    ctx.stroke();
+  } else if (el.elevador) {
+    // Puerta de elevador: dos hojas corredizas (cerradas) que abren desde el centro, sin giro
+    const s = el.invertir ? 1 : -1;
+    const t = Math.min(0.05, g * 0.35);
+    const y = s * (g / 2 - t / 2);
+    ctx.fillStyle = '#d1d5db';
+    ctx.lineWidth = 0.015;
+    for (const x of [-w / 2, 0]) {
+      ctx.fillRect(x, y - t / 2, w / 2, t);
+      ctx.strokeRect(x, y - t / 2, w / 2, t);
+    }
+    // Flechas de apertura hacia los lados, del lado del vestíbulo
+    const ya = s * (g / 2 + 0.12);
+    const f = Math.min(0.08, w * 0.08);
+    ctx.lineWidth = 0.015;
+    ctx.beginPath();
+    for (const d of [-1, 1]) {
+      const x0 = d * w * 0.08;
+      const x1 = d * w * 0.4;
+      ctx.moveTo(x0, ya);
+      ctx.lineTo(x1, ya);
+      ctx.moveTo(x1 - d * f, ya - f * 0.6);
+      ctx.lineTo(x1, ya);
+      ctx.lineTo(x1 - d * f, ya + f * 0.6);
+    }
     ctx.stroke();
   } else {
     const s = el.invertir ? 1 : -1;
@@ -442,6 +470,8 @@ export function dibujarElemento(ctx: CanvasRenderingContext2D, el: Elemento, d: 
       ctx.translate(el.p.x, el.p.y);
       ctx.rotate(el.ang);
       dibujarSimbolo(ctx, el.clave, el.ancho, el.alto, el.color, 0.02);
+      if (el.aire && (el.clave === 'rejilla-sup' || el.clave === 'rejilla-inf')) flechasAire(ctx, el.ancho, el.alto, el.clave === 'rejilla-sup');
+      if (el.puertaTransfer && (el.clave === 'transfer' || el.clave === 'transfer-barrera')) puertaVaivenTransfer(ctx, bisagrasTransfer(el, d.elementos), el.color);
       if (el.haz && tieneHaz(el.clave)) {
         // Haz de rayos X visto desde arriba: abanico que sale del frente del tubo
         const s = (el.hazAmplitud ?? 0.5) / 2;
@@ -481,6 +511,9 @@ export function dibujarElemento(ctx: CanvasRenderingContext2D, el: Elemento, d: 
           halo: true,
         });
       }
+      break;
+    case 'imagen':
+      dibujarImagen(ctx, el, d, escala);
       break;
     case 'norte':
       dibujarNorte(ctx, el.p, el.ang, el.tam, el.punto ?? 'N');
@@ -677,8 +710,80 @@ function dibujarCuadricula(ctx: CanvasRenderingContext2D, v: Vista, ancho: numbe
   }
 }
 
+/** Flechas del aire frente a una rejilla, en planta: salen de la superior (azul) y entran a la inferior (rojo). */
+function flechasAire(ctx: CanvasRenderingContext2D, w: number, h: number, sale: boolean) {
+  ctx.save();
+  const color = sale ? '#0ea5e9' : '#ef4444';
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = 0.025;
+  const y0 = h / 2 + 0.06;
+  const y1 = y0 + 0.45;
+  const xs = w > 0.45 ? [-w / 3, 0, w / 3] : [0];
+  for (const x of xs) {
+    const [a, b] = sale ? [y0, y1] : [y1, y0];
+    const s = Math.sign(b - a);
+    ctx.beginPath();
+    ctx.moveTo(x, a);
+    ctx.lineTo(x, b - s * 0.1);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x, b);
+    ctx.lineTo(x - 0.06, b - s * 0.12);
+    ctx.lineTo(x + 0.06, b - s * 0.12);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+/** Doble puerta de vaivén sobre el transfer, en planta: hojas abiertas al lado limpio y arcos a ambos lados. */
+function puertaVaivenTransfer(ctx: CanvasRenderingContext2D, [xL, xR]: [number, number], color: string) {
+  ctx.save();
+  ctx.strokeStyle = color;
+  const r = (xR - xL) / 2;
+  for (const hx of [xL, xR]) {
+    ctx.lineWidth = 0.03;
+    ctx.beginPath();
+    ctx.moveTo(hx, 0);
+    ctx.lineTo(hx, r);
+    ctx.stroke();
+    ctx.lineWidth = 0.012;
+    ctx.setLineDash([0.05, 0.035]);
+    ctx.beginPath();
+    // Arco de cada lado: de la hoja cerrada (al centro) a la hoja abierta
+    if (hx === xL) {
+      ctx.arc(hx, 0, r, -Math.PI / 2, Math.PI / 2);
+    } else {
+      ctx.arc(hx, 0, r, Math.PI / 2, (3 * Math.PI) / 2);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  ctx.restore();
+}
+
+/** Imagen pegada, con su transparencia. Mientras se carga se ve solo su marco. */
+function dibujarImagen(ctx: CanvasRenderingContext2D, el: Imagen, d: DatosCroquis, escala: number) {
+  if (d.opciones.ocultarImagenes) return;
+  ctx.translate(el.p.x, el.p.y);
+  ctx.rotate(el.ang);
+  const img = imagenLista(d.imagenes?.[el.img]);
+  if (img) {
+    ctx.globalAlpha = 1 - Math.min(95, Math.max(0, el.transparencia)) / 100;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, -el.ancho / 2, -el.alto / 2, el.ancho, el.alto);
+  } else {
+    ctx.strokeStyle = '#9ca3af';
+    ctx.lineWidth = 1 / escala;
+    ctx.setLineDash([4 / escala, 3 / escala]);
+    ctx.strokeRect(-el.ancho / 2, -el.alto / 2, el.ancho, el.alto);
+  }
+}
+
 /** El transfer va en el vano de la puerta: se dibuja encima de ella para que no lo tape. */
-const rango = (el: Elemento) => (el.tipo === 'mueble' && (el.clave === 'transfer' || el.clave === 'transfer-barrera') ? 4.5 : ORDEN[el.tipo]);
+const rango = (el: Elemento) =>
+  el.tipo === 'mueble' && (el.clave === 'transfer' || el.clave === 'transfer-barrera') ? 4.5 : el.tipo === 'imagen' && el.encima ? 9 : ORDEN[el.tipo];
 
 export function ordenar(els: Elemento[]): Elemento[] {
   return els

@@ -6,6 +6,7 @@
  */
 import { Editor, type OpcionesEditor, type ResultadoCroquis } from './editor';
 import { exportarPNG, type OpcionesExportar } from './exportar';
+import { precargarImagenes } from './imagenes';
 import { datosVacios, normalizarDatos, type DatosCroquis } from './modelo';
 
 export type { DatosCroquis, ResultadoCroquis, OpcionesExportar };
@@ -53,9 +54,19 @@ export function montar(contenedor: HTMLElement, o: OpcionesEditor = {}): Editor 
   return new Editor(contenedor, o);
 }
 
-/** Genera la imagen PNG de un croquis guardado sin abrir el editor. */
+/**
+ * Genera la imagen PNG de un croquis guardado sin abrir el editor.
+ * Si el croquis tiene imágenes pegadas, usa `imagenConFotos()` (la primera vez hay que esperar a que se carguen).
+ */
 export function imagen(datos: DatosCroquis, o?: OpcionesExportar) {
   return exportarPNG(normalizarDatos(datos), o);
 }
 
 export { datosVacios, normalizarDatos };
+
+/** Como `imagen()`, pero espera a que se carguen las imágenes pegadas en el croquis. */
+export async function imagenConFotos(datos: DatosCroquis, o?: OpcionesExportar) {
+  const d = normalizarDatos(datos);
+  await precargarImagenes(d);
+  return exportarPNG(d, o);
+}
