@@ -98,7 +98,7 @@ export function alcanceHaz(el: Mueble, d: DatosCroquis): number {
   const dir = { x: frente.x - f.p.x, y: frente.y - f.p.y };
   const muros = poligonosMuros(d.elementos.filter((e): e is Muro => e.tipo === 'muro')).map((m) => m.pts as Pt[]);
   const obstaculos = d.elementos
-    .filter((o): o is Mueble => o.tipo === 'mueble' && o !== el && alturaModelo(o) > f.z - 0.3)
+    .filter((o): o is Mueble => o.tipo === 'mueble' && o !== el && o.clave !== 'lampara-quir' && alturaModelo(o) > f.z - 0.3)
     .map((o) => contorno(o))
     .filter((c) => !enPoligono(f.p, c));
   // Con un alcance fijado a mano, el haz solo se detiene antes si topa con un muro

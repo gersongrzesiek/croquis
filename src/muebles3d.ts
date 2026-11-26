@@ -35,6 +35,7 @@ export const MAT = {
   marino: { color: '#1e2b5e', luzLados: [0.02, 0.14], luzTapa: 0.18 },
   azulRey: { color: '#2d3ca8', luzLados: [0.02, 0.16], luzTapa: 0.22 },
   azul: { color: '#2f6db5', luzLados: [0.15, 0.4], luzTapa: 0.5 },
+  luz: { color: '#fff6d8', luzLados: [0.6, 0.8], luzTapa: 0.9 },
   vidrio: { color: '#5d7286', luzLados: [0.15, 0.35], luzTapa: 0.4 },
   inox: { color: '#9aa3ad', luzLados: [0.3, 0.55], luzTapa: 0.7 },
 } satisfies Record<string, Material>;
@@ -1021,7 +1022,41 @@ export function modeloMueble(el: Mueble): Pieza[] {
     case 'regadera':
     case 'coladera':
     case 'trampa-grasa':
-    case 'lampara-quir':
+    case 'lampara-quir': {
+      // Lámpara quirúrgica de techo con dos cabezas: base redonda en el techo, columna, dos brazos
+      // horizontales y de cada uno una bajada hasta la cabeza (disco blanco con aro metálico y mango al centro).
+      const H = Math.max(alturaMuros, 2.4);
+      const barra = (a: Pt, b: Pt, ancho: number, z0: number, z1: number, mat: Material) => {
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const l = Math.hypot(dx, dy) || 1;
+        const nx = (-dy / l) * (ancho / 2);
+        const ny = (dx / l) * (ancho / 2);
+        piezas.push({ pts: [mundo(a.x + nx, a.y + ny), mundo(b.x + nx, b.y + ny), mundo(b.x - nx, b.y - ny), mundo(a.x - nx, a.y - ny)], z0, z1, mat });
+      };
+      cil(0, 0, 0.17, 0.17, H - 0.16, H, MAT.blanco, 18);
+      cil(0, 0, 0.05, 0.05, H - 0.62, H - 0.16, MAT.blanco, 12);
+      const r = m * 0.3;
+      const cabezas: [Pt, number][] = [
+        [{ x: -W / 2 + W * 0.35, y: -D / 2 + D * 0.4 }, H - 0.5],
+        [{ x: -W / 2 + W * 0.65, y: -D / 2 + D * 0.62 }, H - 0.62],
+      ];
+      for (const [c, zb] of cabezas) {
+        // Brazo horizontal hasta el borde de la cabeza, bajada y horquilla
+        const l = Math.hypot(c.x, c.y) || 1;
+        const borde = { x: c.x + (c.x / l) * (r + 0.05), y: c.y + (c.y / l) * (r + 0.05) };
+        barra({ x: 0, y: 0 }, borde, 0.05, zb - 0.05, zb, MAT.blanco);
+        cil(borde.x, borde.y, 0.025, 0.025, 1.78, zb - 0.05, MAT.blanco, 10);
+        barra(borde, c, 0.035, 1.75, 1.78, MAT.blanco);
+        // Cabeza: aro metálico, cuerpo blanco, cara de luz abajo y mango
+        cil(c.x, c.y, r * 1.06, r * 1.06, 1.66, 1.68, MAT.metal, 24);
+        cil(c.x, c.y, r * 0.96, r * 0.96, 1.62, 1.66, MAT.luz, 24);
+        cil(c.x, c.y, r, r, 1.66, 1.74, MAT.blanco, 24);
+        cil(c.x, c.y, r * 0.35, r * 0.35, 1.74, 1.77, MAT.blanco, 14);
+        cil(c.x, c.y, 0.03, 0.03, 1.5, 1.62, MAT.blanco, 10);
+      }
+      break;
+    }
     case 'lampara-seg':
     case 'luz-roja':
     case 'senal-rad':
