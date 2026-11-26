@@ -169,6 +169,8 @@ export interface DatosCroquis {
   opciones: {
     /** Muestra la longitud de cada muro. */
     medidasMuros: boolean;
+    /** Oculta todas las imágenes pegadas (en el lienzo y en el PNG). */
+    ocultarImagenes?: boolean;
     /** Vista con la que se muestra y exporta el croquis (por defecto el plano). */
     vista?: 'plano' | 'isometrico';
     /** Altura de los muros en la vista isométrica, en metros (2.5 por defecto). */

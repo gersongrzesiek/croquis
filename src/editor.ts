@@ -191,6 +191,7 @@ export class Editor {
   private observador: ResizeObserver;
   private quitarTeclas: () => void;
   private quitarImagenes: () => void;
+  private btnImagenes!: HTMLButtonElement;
   /** Proporción ancho/alto de la imagen cuya esquina se arrastra. */
   private proporcion = 1;
 
@@ -279,6 +280,16 @@ export class Editor {
         this.datos.opciones.medidasMuros = v;
         this.notificar();
       }, true),
+      (this.btnImagenes = alternar('Imágenes', 'Mostrar u ocultar todas las imágenes pegadas (también en el PNG)', () => !this.datos.opciones.ocultarImagenes, (v) => {
+        if (v) delete this.datos.opciones.ocultarImagenes;
+        else {
+          this.datos.opciones.ocultarImagenes = true;
+          // Lo oculto no queda seleccionado
+          for (const e of this.datos.elementos) if (e.tipo === 'imagen') this.seleccion.delete(e.id);
+          this.actualizarPanel();
+        }
+        this.notificar();
+      }, true)),
     );
     barra.append(h('span', { className: 'crq-esp' }));
     if (this.o.modo === 'modal') {
@@ -1779,7 +1790,8 @@ export class Editor {
     const lista = this.datos.elementos
       .map((e, i) => ({ e, i }))
       .sort((a, b) => prioridad(b.e) - prioridad(a.e) || tam(a.e) - tam(b.e) || b.i - a.i);
-    for (const { e } of lista) if (!(e.tipo === 'imagen' && e.bloqueada) && toca(e, p, tol)) return e;
+    const oculta = (e: Elemento) => e.tipo === 'imagen' && (e.bloqueada || !!this.datos.opciones.ocultarImagenes);
+    for (const { e } of lista) if (!oculta(e) && toca(e, p, tol)) return e;
     return null;
   }
 
@@ -2263,7 +2275,7 @@ export class Editor {
         const y1 = Math.max(a.a.y, a.b.y);
         if (x1 - x0 > this.tol(3) || y1 - y0 > this.tol(3)) {
           for (const el of this.datos.elementos) {
-            if (el.tipo === 'imagen' && el.bloqueada) continue;
+            if (el.tipo === 'imagen' && (el.bloqueada || this.datos.opciones.ocultarImagenes)) continue;
             const c = cajaDe(el);
             if (c.minx >= x0 && c.maxx <= x1 && c.miny >= y0 && c.maxy <= y1) this.seleccion.add(el.id);
           }
@@ -2340,7 +2352,7 @@ export class Editor {
       if (ctrl && k === 'a') {
         e.preventDefault();
         this.cambiarHerramienta('seleccionar');
-        this.seleccion = new Set(this.datos.elementos.filter((x) => !(x.tipo === 'imagen' && x.bloqueada)).map((x) => x.id));
+        this.seleccion = new Set(this.datos.elementos.filter((x) => !(x.tipo === 'imagen' && (x.bloqueada || this.datos.opciones.ocultarImagenes))).map((x) => x.id));
         this.actualizarPanel();
         this.dibujar();
         return;
@@ -2644,6 +2656,12 @@ export class Editor {
     const maxW = (r.width * 0.7) / this.vista.escala;
     const maxH = (r.height * 0.7) / this.vista.escala;
     const k = Math.min(maxW / prep.ancho, maxH / prep.alto, 1 / 100);
+    // Si las imágenes estaban ocultas, se vuelven a mostrar para ver la nueva
+    if (this.datos.opciones.ocultarImagenes) {
+      delete this.datos.opciones.ocultarImagenes;
+      this.btnImagenes.classList.add('crq-activo');
+      this.btnImagenes.setAttribute('aria-pressed', 'true');
+    }
     const clave = nuevoId();
     this.datos.imagenes = { ...this.datos.imagenes, [clave]: prep.url };
     const el: Imagen = {

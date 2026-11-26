@@ -60,6 +60,8 @@ export interface ImagenCroquis {
 
 /** Genera la imagen PNG del croquis ajustada a su contenido. */
 export function exportarPNG(datos: DatosCroquis, o: OpcionesExportar = {}): ImagenCroquis {
+  // Con las imágenes ocultas, tampoco cuentan para el tamaño de la imagen
+  if (datos.opciones.ocultarImagenes) datos = { ...datos, elementos: datos.elementos.filter((e) => e.tipo !== 'imagen') };
   const anchoMax = o.anchoMax ?? 2000;
   const altoMax = o.altoMax ?? 2000;
   const margen = o.margen ?? 0.5;

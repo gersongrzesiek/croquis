@@ -765,6 +765,7 @@ function puertaVaivenTransfer(ctx: CanvasRenderingContext2D, [xL, xR]: [number, 
 
 /** Imagen pegada, con su transparencia. Mientras se carga se ve solo su marco. */
 function dibujarImagen(ctx: CanvasRenderingContext2D, el: Imagen, d: DatosCroquis, escala: number) {
+  if (d.opciones.ocultarImagenes) return;
   ctx.translate(el.p.x, el.p.y);
   ctx.rotate(el.ang);
   const img = imagenLista(d.imagenes?.[el.img]);
