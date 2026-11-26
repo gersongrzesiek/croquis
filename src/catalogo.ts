@@ -48,6 +48,7 @@ export const CATALOGO: ItemCatalogo[] = [
   it('transfer', 'Transfer / cambio de botas', 0.9, 0.4),
   it('transfer-barrera', 'Transfer (solo barrera)', 0.9, 0.4),
   it('lampara-quir', 'Lámpara quirúrgica', 0.9, 0.9),
+  it('anaquel-ceye', 'Anaquel CEyE', 0.9, 0.45),
   it('anestesia', 'Equipo de anestesia', 0.7, 0.6),
   it('mesa-mayo', 'Mesa Mayo', 0.6, 0.4),
   it('mesa-rinon', 'Mesa riñón', 1.2, 0.6),
@@ -118,7 +119,7 @@ export const CATEGORIAS: Categoria[] = [
     id: 'hospitalario',
     nombre: 'Hospitalario',
     norma: 'NOM-016-SSA3-2012',
-    claves: ['cama-hosp', 'camilla', 'camilla-traslado', 'mesa-exploracion', 'mesa-quirurgica', 'mesa-obstetrica', 'cama-parto', 'transfer', 'transfer-barrera', 'lampara-quir', 'anestesia', 'mesa-mayo', 'mesa-rinon', 'mesa-pasteur', 'carro-rojo', 'carro-curacion', 'portasueros', 'lavabo-cirujano', 'mesa-tarja', 'lavabo', 'asiento-giratorio', 'banqueta', 'negatoscopio', 'bote-rpbi', 'bote', 'autoclave-emp', 'rejilla-sup', 'rejilla-inf'],
+    claves: ['cama-hosp', 'camilla', 'camilla-traslado', 'mesa-exploracion', 'mesa-quirurgica', 'mesa-obstetrica', 'cama-parto', 'transfer', 'transfer-barrera', 'lampara-quir', 'anestesia', 'mesa-mayo', 'mesa-rinon', 'mesa-pasteur', 'carro-rojo', 'carro-curacion', 'portasueros', 'lavabo-cirujano', 'mesa-tarja', 'lavabo', 'asiento-giratorio', 'banqueta', 'negatoscopio', 'bote-rpbi', 'bote', 'anaquel-ceye', 'autoclave-emp', 'rejilla-sup', 'rejilla-inf'],
   },
   {
     id: 'plagas',
@@ -375,6 +376,17 @@ export function dibujarSimbolo(ctx: CanvasRenderingContext2D, clave: string, w: 
       ctx.lineWidth = lw;
       break;
     }
+    case 'anaquel-ceye':
+      // Anaquel cerrado: cuerpo con repisas (líneas) y dos puertas de vidrio al frente (abajo)
+      caja('#eef0f2');
+      ctx.lineWidth = lw * 0.6;
+      ctx.setLineDash([lw * 3, lw * 2]);
+      for (const fy of [0.3, 0.55, 0.8]) lf(0.05, fy, 0.95, fy);
+      ctx.setLineDash([]);
+      ctx.lineWidth = lw;
+      rect(0, 0.9, 0.5, 0.1, '#cfe3f3');
+      rect(0.5, 0.9, 0.5, 0.1, '#cfe3f3');
+      break;
     case 'cama-parto':
     case 'mesa-obstetrica': {
       if (clave === 'cama-parto') {

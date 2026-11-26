@@ -35,6 +35,7 @@ export const MAT = {
   marino: { color: '#1e2b5e', luzLados: [0.02, 0.14], luzTapa: 0.18 },
   azulRey: { color: '#2d3ca8', luzLados: [0.02, 0.16], luzTapa: 0.22 },
   azul: { color: '#2f6db5', luzLados: [0.15, 0.4], luzTapa: 0.5 },
+  vidrio: { color: '#5d7286', luzLados: [0.15, 0.35], luzTapa: 0.4 },
   inox: { color: '#9aa3ad', luzLados: [0.3, 0.55], luzTapa: 0.7 },
 } satisfies Record<string, Material>;
 
@@ -192,15 +193,24 @@ export function modeloMueble(el: Mueble): Pieza[] {
       [v[2], v[3], t[3], t[2]],
       [v[3], v[0], t[0], t[3]],
     ];
+    poliedro(lados, c, mat);
+  };
+  /** Sólido de caras planas (coordenadas locales) con normales hacia afuera respecto del centro `c`. */
+  const poliedro = (lados: V3[][], c: V3, mat: Material) => {
     const o = mundo(0, 0);
     const malla: CaraMalla[] = lados.map((q) => {
       let n = unit(cruz(resta(q[1], q[0]), resta(q[2], q[0])));
-      const centro = por(q.reduce((a, p) => suma(a, p), [0, 0, 0] as V3), 1 / 4);
+      const centro = por(q.reduce((a, p) => suma(a, p), [0, 0, 0] as V3), 1 / q.length);
       if (n[0] * (centro[0] - c[0]) + n[1] * (centro[1] - c[1]) + n[2] * (centro[2] - c[2]) < 0) n = por(n, -1);
       const w = mundo(n[0], n[1]);
       return { pts: q.map((p) => ({ p: mundo(p[0], p[1]), z: p[2] })), n: { x: w.x - o.x, y: w.y - o.y, z: n[2] } };
     });
-    piezas.push({ pts: [mundo(x0, yB), mundo(x1, yB), mundo(x1, yE), mundo(x0, yE)], z0: z, z1: z + sube + grueso, mat, malla });
+    const todos = lados.flat();
+    const xs = todos.map((p) => p[0]);
+    const ys = todos.map((p) => p[1]);
+    const zs = todos.map((p) => p[2]);
+    const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+    piezas.push({ pts: [mundo(x0, y0), mundo(x1, y0), mundo(x1, y1), mundo(x0, y1)], z0: Math.min(...zs), z1: Math.max(...zs), mat, malla });
   };
   /**
    * Doble puerta de vaivén sobre la barrera del transfer: dos hojas desde justo encima de la barrera
@@ -606,6 +616,49 @@ export function modeloMueble(el: Mueble): Pieza[] {
       caja(0, 0, 1, 1, 0.7, 0.8, MAT.blanco);
       caja(0.15, 0.35, 0.85, 0.65, 0.8, 0.81, MAT.oscuro);
       break;
+    case 'anaquel-ceye': {
+      // Anaquel de acero inoxidable para CEyE: zoclo, cuerpo, copete inclinado hacia atrás (no acumula polvo)
+      // y dos puertas con ventana de vidrio por donde se ven las repisas.
+      const H = 1.8;
+      const yf = D / 2;
+      caja(0.02, 0.04, 0.98, 0.97, 0, 0.1, MAT.inox);
+      caja(0, 0, 1, 0.97, 0.1, H, MAT.inox);
+      // Copete: cuña que sube del frente hacia atrás
+      const sube = 0.16;
+      const yb = -D / 2;
+      const f0: V3 = [-W / 2, yf - 0.03, H];
+      const f1: V3 = [W / 2, yf - 0.03, H];
+      const b0: V3 = [-W / 2, yb, H];
+      const b1: V3 = [W / 2, yb, H];
+      const t0: V3 = [-W / 2, yb, H + sube];
+      const t1: V3 = [W / 2, yb, H + sube];
+      poliedro(
+        [
+          [f0, f1, b1, b0],
+          [f0, f1, t1, t0],
+          [b0, b1, t1, t0],
+          [f0, b0, t0],
+          [f1, b1, t1],
+        ],
+        [0, (yf - 0.03 + yb * 2) / 3, H + sube / 3],
+        MAT.inox,
+      );
+      // Puertas: marco de acero con ventana de vidrio; detrás del vidrio se adivinan las repisas
+      const zv0 = 0.22;
+      const zv1 = H - 0.12;
+      for (const [a, b] of [[0.03, 0.495], [0.505, 0.97]] as const) {
+        caja(a, 0.97, b, 1, 0.1, H, MAT.inox);
+        caja(a + 0.07, 1, b - 0.07, 1.006, zv0, zv1, MAT.vidrio);
+        const n = 5;
+        for (let i = 1; i < n; i++) {
+          const z = zv0 + ((zv1 - zv0) * i) / n;
+          caja(a + 0.08, 1.006, b - 0.08, 1.012, z, z + 0.015, MAT.inox);
+        }
+      }
+      // Jaladera al centro
+      caja(0.47, 1.006, 0.53, 1.03, 0.95, 0.98, MAT.metal);
+      break;
+    }
     case 'anestesia': {
       // Máquina de anestesia: carro con base oscura y ruedas, cuerpo blanco con tres cajones, mesa de trabajo,
       // módulo del ventilador con pantalla y perillas, vaporizadores, dos monitores arriba, bolsa y canister al lado.
